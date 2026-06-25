@@ -1,0 +1,6 @@
+{
+  "name": "GoSplash Ticketing System",
+  "description": "A highly polished, modern, responsive ticket sales and revenue reporting system for the GoSplash waterpark.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

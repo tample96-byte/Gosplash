@@ -19,6 +19,7 @@ import {
   loadRentalPrices,
   saveRentalPrices,
   clearAllData,
+  clearTransactionsOnly,
 } from "./utils/storage";
 import { UserRole, TicketPrice, Discount, Transaction, RentalPrices } from "./types";
 import { RoleSelector } from "./components/RoleSelector";
@@ -26,9 +27,11 @@ import { CashierPanel } from "./components/CashierPanel";
 import { AdminPanel } from "./components/AdminPanel";
 import { ReceiptPrintout } from "./components/ReceiptPrintout";
 import { LoginPage } from "./components/LoginPage";
+import { Language } from "./utils/lang";
 
 export default function App() {
   // Master states
+  const language: Language = "ID";
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [activeRole, setActiveRole] = useState<UserRole>("Admin");
   const [prices, setPrices] = useState<TicketPrice[]>([]);
@@ -118,6 +121,12 @@ export default function App() {
     setActiveReceipt(null);
   };
 
+  // Reset transactions only (preserves setup configs, prices, discounts, printer, and passwords)
+  const handleResetTransactionsOnly = () => {
+    clearTransactionsOnly();
+    setTransactions([]);
+  };
+
   // Restore all data from backup file
   const handleRestoreAllData = (backupData: {
     prices: TicketPrice[];
@@ -140,7 +149,11 @@ export default function App() {
   };
 
   if (!isLoggedIn) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <LoginPage
+        onLoginSuccess={handleLoginSuccess}
+      />
+    );
   }
 
   return (
@@ -165,6 +178,7 @@ export default function App() {
               rentalPrices={rentalPrices}
               onAddTransaction={handleAddTransaction}
               onShowReceipt={setActiveReceipt}
+              language={language}
             />
           </section>
 
@@ -182,9 +196,11 @@ export default function App() {
               onUpdateDiscounts={handleUpdateDiscounts}
               onUpdatePrinter={handleUpdatePrinter}
               onClearTransactions={handleResetAllData}
+              onClearTransactionsOnly={handleResetTransactionsOnly}
               onRestoreAllData={handleRestoreAllData}
               onUpdateTransactions={handleUpdateTransactions}
               onShowReceipt={setActiveReceipt}
+              language={language}
             />
           </section>
         </div>
@@ -196,6 +212,7 @@ export default function App() {
           transaction={activeReceipt}
           printerName={printerName}
           onClose={() => setActiveReceipt(null)}
+          language={language}
         />
       )}
 

@@ -7,16 +7,21 @@ import React, { useState } from "react";
 import { UserRole } from "../types";
 import { Lock, User, Shield, Eye, EyeOff, LogIn, AlertCircle } from "lucide-react";
 import { loadAdminPassword, loadKasirPassword } from "../utils/storage";
+import { translations } from "../utils/lang";
 
 interface LoginPageProps {
   onLoginSuccess: (role: UserRole) => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({
+  onLoginSuccess,
+}) => {
   const [role, setRole] = useState<UserRole>("Kasir");
   const [password, setPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
+
+  const t = translations.ID;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +36,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     } else if (role === "Kasir" && password === correctKasirPassword) {
       onLoginSuccess("Kasir");
     } else {
-      setError("Password salah! Silakan coba lagi.");
+      setError(t.wrong_password);
     }
   };
 
@@ -50,7 +55,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <span className="font-sans font-black text-2xl tracking-wider text-white">GS</span>
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight">
-            GOSPLASH TICKETING
+            {t.title}
           </h1>
           <p className="text-xs text-slate-400 font-sans mt-1">
             Sistem Manajemen Tiket & Laporan Keuangan
@@ -100,14 +105,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
               <Lock className="w-3.5 h-3.5 text-slate-500" />
-              Kata Sandi (Password)
+              {t.password_label}
             </label>
             <div className="relative">
               <input
                 id="login-password-input"
                 type={showPassword ? "text" : "password"}
                 required
-                placeholder="Masukkan password..."
+                placeholder={t.password_placeholder}
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);

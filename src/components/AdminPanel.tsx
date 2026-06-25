@@ -8,6 +8,7 @@ import { Transaction, TicketPrice, Discount, ReportPeriod, RentalPrices } from "
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { ShieldAlert, Download, Coins, Calendar, CalendarRange, Trash2, Plus, Edit3, Settings, AlertCircle, HelpCircle, CheckCircle, X, Search, Printer, Key, Tent, Database, Upload, Shield, Eye, EyeOff } from "lucide-react";
 import { saveAdminPassword, saveKasirPassword } from "../utils/storage";
+import { Language, translations } from "../utils/lang";
 
 interface AdminPanelProps {
   isLocked: boolean;
@@ -21,6 +22,7 @@ interface AdminPanelProps {
   onUpdateDiscounts: (discounts: Discount[]) => void;
   onUpdatePrinter: (name: string) => void;
   onClearTransactions: () => void;
+  onClearTransactionsOnly: () => void;
   onRestoreAllData: (data: {
     prices: TicketPrice[];
     rentalPrices: RentalPrices;
@@ -30,6 +32,7 @@ interface AdminPanelProps {
   }) => void;
   onUpdateTransactions?: (transactions: Transaction[]) => void;
   onShowReceipt?: (tx: Transaction) => void;
+  language: Language;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
@@ -44,10 +47,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateDiscounts,
   onUpdatePrinter,
   onClearTransactions,
+  onClearTransactionsOnly,
   onRestoreAllData,
   onUpdateTransactions,
   onShowReceipt,
+  language,
 }) => {
+  const t = translations[language];
   // Filters matching VB.NET form controls
   const [period, setPeriod] = useState<ReportPeriod>("Harian");
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -86,6 +92,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Custom UI modal & toast states (replaces blocked native confirm/alert)
   const [promoToDelete, setPromoToDelete] = useState<Discount | null>(null);
   const [showEodModal, setShowEodModal] = useState<boolean>(false);
+  const [showResetModal, setShowResetModal] = useState<boolean>(false);
+  const [resetConfirmText, setResetConfirmText] = useState<string>("");
   const [toastMessage, setToastMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Backup & Change Password States
@@ -167,6 +175,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
     };
     reader.readAsText(file);
+  };
+
+  // Handle resetting transaction data only
+  const handleResetTransactionsSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (resetConfirmText.toUpperCase() !== "RESET") {
+      setToastMessage({ type: "error", text: 'Harap ketik kata "RESET" dengan benar untuk mengonfirmasi.' });
+      return;
+    }
+    try {
+      onClearTransactionsOnly();
+      setToastMessage({ type: "success", text: "Seluruh data transaksi berhasil dikosongkan. Aplikasi kini sangat ringan!" });
+      setShowResetModal(false);
+      setResetConfirmText("");
+    } catch (err) {
+      setToastMessage({ type: "error", text: "Gagal mengosongkan data transaksi." });
+    }
   };
 
   // Password Modification Handler
@@ -960,6 +985,80 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
+      {/* RESET DATA TRANSAKSI MODAL */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150 text-left shadow-2xl">
+            
+            {/* Modal Header */}
+            <div className="p-5 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+              <div className="flex items-center gap-2 text-rose-500">
+                <Trash2 className="w-5 h-5" />
+                <h3 className="font-extrabold text-white text-base">Konfirmasi Reset Transaksi</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowResetModal(false);
+                  setResetConfirmText("");
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleResetTransactionsSubmit} className="p-6 space-y-4">
+              <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 text-xs space-y-2 leading-relaxed text-rose-300">
+                <p className="font-bold text-rose-200">⚠️ PERINGATAN: TINDAKAN TIDAK DAPAT DIBATALKAN</p>
+                <p>
+                  Tindakan ini akan <strong>menghapus semua riwayat transaksi</strong> di database aplikasi ini secara permanen agar aplikasi kembali ringan dan cepat.
+                </p>
+                <p>
+                  Daftar harga tiket, harga sewa loker/saung, printer, kata sandi, serta promo aktif <strong>TIDAK</strong> akan terhapus.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  Ketik kata <span className="text-rose-400 font-black">"RESET"</span> untuk menyetujui
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  placeholder="Ketik RESET disini..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-center font-bold tracking-widest text-white focus:outline-none focus:border-rose-500 transition placeholder-slate-700 uppercase"
+                />
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowResetModal(false);
+                    setResetConfirmText("");
+                  }}
+                  className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-bold rounded-xl transition border border-slate-700"
+                >
+                  BATAL
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetConfirmText.toUpperCase() !== "RESET"}
+                  className="flex-1 py-3 px-4 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-bold rounded-xl transition shadow-md"
+                >
+                  YA, RESET SEKARANG
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
+
       {/* Hidden printable template for thermal printer popup */}
       <div id="eod-report-print-area" className="hidden">
         <div style={{ textAlign: "center" }}>
@@ -1034,15 +1133,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <ShieldAlert className="w-12 h-12 text-rose-600" />
           </div>
           <h2 className="text-2xl font-black text-rose-800 tracking-tight">
-            LAPORAN DIKUNCI
+            {language === "ID" ? "LAPORAN DIKUNCI" : "REPORTS LOCKED"}
           </h2>
           <p className="text-sm font-semibold text-rose-700/80 mt-1 max-w-sm">
-            Hak akses Anda saat ini adalah KASIR. Menu laporan & pengaturan harga hanya dapat diakses oleh ADMIN.
+            {language === "ID"
+              ? "Hak akses Anda saat ini adalah KASIR. Menu laporan & pengaturan harga hanya dapat diakses oleh ADMIN."
+              : "Your current role is CASHIER. Reports & pricing configurations can only be accessed by ADMIN."}
           </p>
           <div className="mt-6 flex flex-col items-center gap-1 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
-            <span className="text-xs text-slate-500 font-sans">Ingin melakukan uji coba Admin?</span>
+            <span className="text-xs text-slate-500 font-sans">
+              {language === "ID" ? "Ingin melakukan uji coba Admin?" : "Want to try the Admin dashboard?"}
+            </span>
             <span className="text-xs font-semibold text-slate-800">
-              Ganti user di pojok kanan atas menjadi <strong className="text-blue-600">Admin</strong>
+              {language === "ID"
+                ? "Ganti user di pojok kanan atas menjadi "
+                : "Switch the user in the top right header to "}
+              <strong className="text-blue-600">Admin</strong>
             </span>
           </div>
         </div>
@@ -1057,7 +1163,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <Coins className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs text-slate-500 font-medium font-sans">Total Pendapatan ({period})</p>
+              <p className="text-xs text-slate-500 font-medium font-sans">
+                {language === "ID" ? "Total Pendapatan" : "Total Revenue"} ({period === "Harian" ? (language === "ID" ? "Harian" : "Daily") : period === "Mingguan" ? (language === "ID" ? "Mingguan" : "Weekly") : (language === "ID" ? "Bulanan" : "Monthly")})
+              </p>
               <h3 className="text-xl font-extrabold text-slate-800 font-mono mt-0.5">
                 Rp {totalRevenue.toLocaleString("id-ID")}
               </h3>
@@ -1069,9 +1177,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <CalendarRange className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs text-slate-500 font-medium font-sans">Total Pengunjung ({period})</p>
+              <p className="text-xs text-slate-500 font-medium font-sans">
+                {language === "ID" ? "Total Pengunjung" : "Total Visitors"} ({period === "Harian" ? (language === "ID" ? "Harian" : "Daily") : period === "Mingguan" ? (language === "ID" ? "Mingguan" : "Weekly") : (language === "ID" ? "Bulanan" : "Monthly")})
+              </p>
               <h3 className="text-xl font-extrabold text-slate-800 font-mono mt-0.5">
-                {totalVisitors.toLocaleString("id-ID")} Orang
+                {totalVisitors.toLocaleString("id-ID")} {language === "ID" ? "Orang" : "Pax"}
               </h3>
             </div>
           </div>
@@ -1081,9 +1191,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <Calendar className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs text-slate-500 font-medium font-sans">Jumlah Transaksi</p>
+              <p className="text-xs text-slate-500 font-medium font-sans">
+                {language === "ID" ? "Jumlah Transaksi" : "Total Transactions"}
+              </p>
               <h3 className="text-xl font-extrabold text-slate-800 font-mono mt-0.5">
-                {filteredTx.length} Transaksi
+                {filteredTx.length} {language === "ID" ? "Transaksi" : "Transactions"}
               </h3>
             </div>
           </div>
@@ -1094,10 +1206,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-5">
             <div>
               <h2 className="text-lg font-extrabold text-slate-800">
-                Laporan & Grafik Pendapatan GoSplash
+                {t.reports_title}
               </h2>
               <p className="text-xs text-slate-400 font-sans mt-0.5">
-                Analisis data penjualan tiket berdasarkan periode
+                {t.reports_subtitle}
               </p>
             </div>
 
@@ -1109,9 +1221,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 onChange={(e) => setPeriod(e.target.value as ReportPeriod)}
                 className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="Harian">Harian</option>
-                <option value="Mingguan">Mingguan</option>
-                <option value="Bulanan">Bulanan</option>
+                <option value="Harian">{language === "ID" ? "Harian" : "Daily"}</option>
+                <option value="Mingguan">{language === "ID" ? "Mingguan" : "Weekly"}</option>
+                <option value="Bulanan">{language === "ID" ? "Bulanan" : "Monthly"}</option>
               </select>
               
               <input
@@ -1128,7 +1240,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white font-semibold px-4 py-2 rounded-xl text-sm transition"
               >
                 <Printer className="w-4 h-4" />
-                LAPORAN EOD
+                {t.eod_report}
               </button>
 
               <button
@@ -1137,7 +1249,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-4 py-2 rounded-xl text-sm transition"
               >
                 <Download className="w-4 h-4" />
-                EXPORT EXCEL
+                {t.export_excel}
               </button>
             </div>
           </div>
@@ -1657,6 +1769,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     IMPOR & PULIHKAN
                   </button>
                 </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4 mt-2 space-y-3">
+                <div className="bg-amber-50/80 border border-amber-200/60 rounded-xl p-3 flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-bold text-amber-800">Sangat Ringan: Reset Data Transaksi</h4>
+                    <p className="text-[11px] text-amber-700 leading-relaxed mt-0.5 font-sans">
+                      Agar aplikasi tetap ringan & cepat, hapus seluruh daftar transaksi yang sudah lama (misal per bulan) setelah mengekspor cadangan di atas. Konfigurasi harga & promo akan tetap aman.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  id="reset-transactions-btn"
+                  onClick={() => setShowResetModal(true)}
+                  className="w-full flex items-center justify-center gap-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold py-2.5 px-4 rounded-xl text-xs transition"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-500" />
+                  RESET DATA TRANSAKSI BULANAN
+                </button>
               </div>
             </div>
           </div>

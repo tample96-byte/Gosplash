@@ -133,3 +133,7 @@ export function clearAllData(): void {
   localStorage.removeItem(KEYS.PASSWORD_ADMIN);
   localStorage.removeItem(KEYS.PASSWORD_KASIR);
 }
+
+export function clearTransactionsOnly(): void {
+  localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify([]));
+}

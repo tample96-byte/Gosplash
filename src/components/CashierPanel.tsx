@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { TicketPrice, Discount, Transaction, RentalPrices } from "../types";
 import { Ticket, Users, Percent, Wallet, Banknote, RefreshCw, Printer, AlertTriangle, QrCode, CreditCard, Key, Tent } from "lucide-react";
+import { Language, translations } from "../utils/lang";
 
 interface CashierPanelProps {
   prices: TicketPrice[];
@@ -13,6 +14,7 @@ interface CashierPanelProps {
   rentalPrices: RentalPrices;
   onAddTransaction: (tx: Omit<Transaction, "id">) => Transaction;
   onShowReceipt: (tx: Transaction) => void;
+  language: Language;
 }
 
 export const CashierPanel: React.FC<CashierPanelProps> = ({
@@ -21,7 +23,9 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
   rentalPrices,
   onAddTransaction,
   onShowReceipt,
+  language,
 }) => {
+  const t = translations[language];
   // State variables matching VB.NET form controls
   const [hargaSatuan, setHargaSatuan] = useState<number>(15000);
   const [jumlahPengunjung, setJumlahPengunjung] = useState<string>("");
@@ -214,22 +218,22 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
         <div className="flex items-center space-x-2">
           <Ticket className="w-5 h-5 text-blue-600" />
           <h2 className="text-lg font-bold text-slate-800">
-            Input Transaksi Tiket GoSplash
+            {t.cashier_title}
           </h2>
         </div>
         
         {/* Dynamic Day Badge & Tester Override */}
         <div className="flex items-center gap-1.5 self-start sm:self-center">
-          <span className="text-xs font-semibold text-slate-500 mr-1">Hari Tarif:</span>
+          <span className="text-xs font-semibold text-slate-500 mr-1">{t.day_tarif}</span>
           <select
             id="day-type-override-select"
             value={dayTypeOverride}
             onChange={(e) => setDayTypeOverride(e.target.value as any)}
             className="text-xs bg-white border border-slate-200 rounded-md px-2 py-1 font-sans focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            <option value="Auto">Otomatis (Deteksi)</option>
-            <option value="Senin-Jumat">weekday (Senin-Jumat)</option>
-            <option value="Sabtu-Minggu/Libur">Weekend (Sabtu-Minggu)</option>
+            <option value="Auto">{t.auto_detect}</option>
+            <option value="Senin-Jumat">{t.weekday}</option>
+            <option value="Sabtu-Minggu/Libur">{t.weekend}</option>
           </select>
           <span
             id="active-day-type-badge"
@@ -239,7 +243,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
                 : "bg-blue-100 text-blue-800 border border-blue-200"
             }`}
           >
-            {activeDayType}
+            {activeDayType === "Sabtu-Minggu/Libur" ? (language === "ID" ? "Sabtu-Minggu" : "Sat-Sun") : (language === "ID" ? "Senin-Jumat" : "Mon-Fri")}
           </span>
         </div>
       </div>
@@ -258,7 +262,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
           <div className="grid grid-cols-1 gap-1.5">
             <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
               <Banknote className="w-4 h-4 text-slate-400" />
-              Harga Tiket Satuan (Otomatis)
+              {t.unit_price}
             </label>
             <div className="relative">
               <span className="absolute left-3.5 top-2.5 text-slate-500 font-medium">Rp</span>
@@ -270,7 +274,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
                 className="w-full bg-slate-50 border border-slate-200 text-slate-600 rounded-xl pl-10 pr-4 py-2.5 font-mono font-bold focus:outline-none"
               />
               <span className="absolute right-3 top-2.5 text-xs text-slate-400 bg-slate-200/50 px-2 py-1 rounded">
-                Sistem Terkunci
+                {t.system_locked}
               </span>
             </div>
           </div>
@@ -279,20 +283,20 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
           <div className="grid grid-cols-1 gap-1.5">
             <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
               <Users className="w-4 h-4 text-slate-400" />
-              Jumlah Pengunjung (Orang)
+              {t.num_visitors}
             </label>
             <div className="relative">
               <input
                 id="jumlah-pengunjung-input"
                 type="number"
                 min="1"
-                placeholder="Contoh: 3"
+                placeholder={t.visitors_placeholder}
                 value={jumlahPengunjung}
                 onChange={(e) => setJumlahPengunjung(e.target.value)}
                 required
                 className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
-              <span className="absolute right-4 top-3 text-sm text-slate-500">Orang</span>
+              <span className="absolute right-4 top-3 text-sm text-slate-500">{t.visitor_unit}</span>
             </div>
           </div>
 
@@ -300,7 +304,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
           <div className="grid grid-cols-1 gap-1.5">
             <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
               <Percent className="w-4 h-4 text-slate-400" />
-              Pilih Promo / Diskon Pendukung
+              {t.select_discount}
             </label>
             <div className="flex gap-3">
               <select
@@ -311,7 +315,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
               >
                 {discounts.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.nama_diskon} {d.persen_diskon > 0 ? `(${d.persen_diskon}%)` : ""}
+                    {d.nama_diskon === "- Tanpa Diskon -" && language === "EN" ? "- No Discount -" : d.nama_diskon} {d.persen_diskon > 0 ? `(${d.persen_diskon}%)` : ""}
                   </option>
                 ))}
               </select>
@@ -333,7 +337,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
             <div className="grid grid-cols-1 gap-1.5">
               <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
                 <Key className="w-4 h-4 text-slate-400" />
-                Sewa Loker
+                {t.sewa_loker}
               </label>
               <select
                 id="sewa-loker-select"
@@ -341,7 +345,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
                 onChange={(e) => setSewaLoker(e.target.value as any)}
                 className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
-                <option value="Tidak">Tidak Sewa</option>
+                <option value="Tidak">{t.no_rent}</option>
                 <option value="Tarif 1">Rp {rentalPrices.harga_loker_1.toLocaleString("id-ID")}</option>
                 <option value="Tarif 2">Rp {rentalPrices.harga_loker_2.toLocaleString("id-ID")}</option>
               </select>
@@ -351,7 +355,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
             <div className="grid grid-cols-1 gap-1.5">
               <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
                 <Tent className="w-4 h-4 text-slate-400" />
-                Sewa Tempat / Saung
+                {t.sewa_tempat}
               </label>
               <select
                 id="sewa-tempat-select"
@@ -359,7 +363,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
                 onChange={(e) => setSewaTempat(e.target.value as any)}
                 className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
-                <option value="Tidak">Tidak Sewa</option>
+                <option value="Tidak">{t.no_rent}</option>
                 <option value="Tarif 1">Rp {rentalPrices.harga_tempat_1.toLocaleString("id-ID")}</option>
                 <option value="Tarif 2">Rp {rentalPrices.harga_tempat_2.toLocaleString("id-ID")}</option>
               </select>
@@ -369,7 +373,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
           {/* Total Display (High Highlighted) */}
           <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-inner border border-slate-800 flex flex-col justify-center">
             <span className="text-[10px] font-bold text-blue-400 tracking-widest uppercase mb-1">
-              Total yang Harus Dibayar
+              {t.total_to_pay}
             </span>
             <div className="flex items-baseline justify-between">
               <span className="text-blue-400 font-sans text-xl font-bold">Rp</span>
@@ -382,18 +386,18 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
             {((parseInt(jumlahPengunjung) > 0) || sewaLoker !== "Tidak" || sewaTempat !== "Tidak") && (
               <div className="mt-3 pt-3 border-t border-slate-800 text-xs text-slate-400 space-y-1">
                 <div className="flex justify-between">
-                  <span>Rincian: {jumlahPengunjung || 0} Tiket x Rp {hargaSatuan.toLocaleString("id-ID")}</span>
-                  {persenDiskon > 0 && <span>Hemat: {persenDiskon}%</span>}
+                  <span>{t.breakdown}: {jumlahPengunjung || 0} {language === "ID" ? "Tiket" : "Tickets"} x Rp {hargaSatuan.toLocaleString("id-ID")}</span>
+                  {persenDiskon > 0 && <span>{t.saved}: {persenDiskon}%</span>}
                 </div>
                 {sewaLoker !== "Tidak" && (
                   <div className="flex justify-between text-[11px] text-blue-400/90">
-                    <span>Sewa Loker (Rp {LOKER_PRICES[sewaLoker].toLocaleString("id-ID")})</span>
+                    <span>{t.sewa_loker} (Rp {LOKER_PRICES[sewaLoker].toLocaleString("id-ID")})</span>
                     <span>+Rp {LOKER_PRICES[sewaLoker].toLocaleString("id-ID")}</span>
                   </div>
                 )}
                 {sewaTempat !== "Tidak" && (
                   <div className="flex justify-between text-[11px] text-blue-400/90">
-                    <span>Sewa Tempat/Saung (Rp {TEMPAT_PRICES[sewaTempat].toLocaleString("id-ID")})</span>
+                    <span>{t.sewa_tempat} (Rp {TEMPAT_PRICES[sewaTempat].toLocaleString("id-ID")})</span>
                     <span>+Rp {TEMPAT_PRICES[sewaTempat].toLocaleString("id-ID")}</span>
                   </div>
                 )}
@@ -405,13 +409,13 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
           <div className="grid grid-cols-1 gap-1.5">
             <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
               <Wallet className="w-4 h-4 text-slate-400" />
-              Metode Pembayaran
+              {t.payment_method}
             </label>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { id: "Tunai", label: "Tunai (Cash)", icon: Banknote },
-                { id: "QRIS", label: "QRIS Scan", icon: QrCode },
-                { id: "Debit/Kredit", label: "EDC Kartu", icon: CreditCard },
+                { id: "Tunai", label: t.cash, icon: Banknote },
+                { id: "QRIS", label: t.qris, icon: QrCode },
+                { id: "Debit/Kredit", label: t.card, icon: CreditCard },
               ].map((m) => {
                 const Icon = m.icon;
                 const active = paymentMethod === m.id;
@@ -441,7 +445,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
               <div className="grid grid-cols-1 gap-1.5 animate-in fade-in duration-150">
                 <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
                   <Banknote className="w-4 h-4 text-slate-400" />
-                  Masukkan Nominal Uang Diterima (Rp)
+                  {t.enter_cash}
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-2.5 text-slate-500 font-medium">Rp</span>
@@ -478,7 +482,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
 
               {/* Change Display */}
               <div className="grid grid-cols-1 gap-1.5 animate-in fade-in duration-150">
-                <span className="text-sm font-semibold text-slate-700">Uang Kembalian</span>
+                <span className="text-sm font-semibold text-slate-700">{t.change}</span>
                 <div
                   id="kembalian-display"
                   className={`rounded-xl p-3 border font-mono font-bold text-lg text-center flex items-center justify-center gap-2 ${
@@ -490,7 +494,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
                   }`}
                 >
                   {isKurang && <AlertTriangle className="w-5 h-5 text-rose-600" />}
-                  {kembalianText}
+                  {isKurang ? t.insufficient_funds : (parseFloat(bayar) > 0 ? `Rp ${(parseFloat(bayar) - totalAkhir).toLocaleString("id-ID")}` : "Rp 0")}
                 </div>
               </div>
             </>
@@ -498,7 +502,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
 
           {paymentMethod === "QRIS" && (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center space-y-3 animate-in fade-in duration-150">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pindai QRIS GoSplash</span>
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{language === "ID" ? "Pindai QRIS GoSplash" : "Scan GoSplash QRIS"}</span>
               {/* Beautiful Mock QR Code block */}
               <div className="relative bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center">
                 <div className="w-28 h-28 bg-slate-100 flex flex-col items-center justify-center border border-dashed border-slate-300 rounded-lg overflow-hidden relative">
@@ -513,11 +517,11 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
               </div>
               <div className="text-center">
                 <p className="text-xs text-slate-600 font-sans">
-                  Tunjukkan Kode QRIS di atas kepada pengunjung.
+                  {language === "ID" ? "Tunjukkan Kode QRIS di atas kepada pengunjung." : "Show the QRIS code above to the visitor."}
                 </p>
                 <p className="text-[11px] font-bold text-emerald-600 mt-1 flex items-center justify-center gap-1">
                   <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                  Menunggu Pembayaran (Otomatis)...
+                  {language === "ID" ? "Menunggu Pembayaran (Otomatis)..." : "Waiting for Payment (Automatic)..."}
                 </p>
               </div>
             </div>
@@ -525,10 +529,10 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
 
           {paymentMethod === "Debit/Kredit" && (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 animate-in fade-in duration-150">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block text-center">Data Pembayaran Kartu EDC</span>
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block text-center">{language === "ID" ? "Data Pembayaran Kartu EDC" : "EDC Card Payment Details"}</span>
               <div className="grid grid-cols-2 gap-2">
                 <div className="grid grid-cols-1 gap-1">
-                  <span className="text-xs font-bold text-slate-500">Mesin EDC</span>
+                  <span className="text-xs font-bold text-slate-500">{language === "ID" ? "Mesin EDC" : "EDC Machine"}</span>
                   <select
                     value={cardIssuer}
                     onChange={(e) => setCardIssuer(e.target.value)}
@@ -552,7 +556,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
                 </div>
               </div>
               <p className="text-[10px] text-slate-400 font-sans text-center leading-tight">
-                Pastikan transaksi kartu sukses di mesin EDC fisik sebelum menyimpan transaksi.
+                {language === "ID" ? "Pastikan transaksi kartu sukses di mesin EDC fisik sebelum menyimpan transaksi." : "Ensure the card transaction succeeds on the physical EDC terminal before saving."}
               </p>
             </div>
           )}
@@ -580,7 +584,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
             }`}
           >
             <Printer className="w-5 h-5" />
-            SIMPAN & CETAK NOTA FISIK
+            {t.save_and_print}
           </button>
         </div>
       </form>

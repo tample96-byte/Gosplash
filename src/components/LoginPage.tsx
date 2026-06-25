@@ -6,6 +6,7 @@
 import React, { useState } from "react";
 import { UserRole } from "../types";
 import { Lock, User, Shield, Eye, EyeOff, LogIn, AlertCircle } from "lucide-react";
+import { loadAdminPassword, loadKasirPassword } from "../utils/storage";
 
 interface LoginPageProps {
   onLoginSuccess: (role: UserRole) => void;
@@ -21,10 +22,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     e.preventDefault();
     setError("");
 
+    const correctAdminPassword = loadAdminPassword();
+    const correctKasirPassword = loadKasirPassword();
+
     // Validasi Password sederhana namun aman
-    if (role === "Admin" && password === "admin123") {
+    if (role === "Admin" && password === correctAdminPassword) {
       onLoginSuccess("Admin");
-    } else if (role === "Kasir" && password === "kasir123") {
+    } else if (role === "Kasir" && password === correctKasirPassword) {
       onLoginSuccess("Kasir");
     } else {
       setError("Password salah! Silakan coba lagi.");

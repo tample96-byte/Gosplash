@@ -4,21 +4,32 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { Transaction, TicketPrice, Discount, ReportPeriod } from "../types";
+import { Transaction, TicketPrice, Discount, ReportPeriod, RentalPrices } from "../types";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
-import { ShieldAlert, Download, Coins, Calendar, CalendarRange, Trash2, Plus, Edit3, Settings, AlertCircle, HelpCircle, CheckCircle, X } from "lucide-react";
+import { ShieldAlert, Download, Coins, Calendar, CalendarRange, Trash2, Plus, Edit3, Settings, AlertCircle, HelpCircle, CheckCircle, X, Search, Printer, Key, Tent, Database, Upload, Shield, Eye, EyeOff } from "lucide-react";
+import { saveAdminPassword, saveKasirPassword } from "../utils/storage";
 
 interface AdminPanelProps {
   isLocked: boolean;
   transactions: Transaction[];
   prices: TicketPrice[];
   discounts: Discount[];
+  rentalPrices: RentalPrices;
   printerName: string;
   onUpdatePrices: (prices: TicketPrice[]) => void;
+  onUpdateRentalPrices: (prices: RentalPrices) => void;
   onUpdateDiscounts: (discounts: Discount[]) => void;
   onUpdatePrinter: (name: string) => void;
   onClearTransactions: () => void;
+  onRestoreAllData: (data: {
+    prices: TicketPrice[];
+    rentalPrices: RentalPrices;
+    discounts: Discount[];
+    transactions: Transaction[];
+    printerName: string;
+  }) => void;
   onUpdateTransactions?: (transactions: Transaction[]) => void;
+  onShowReceipt?: (tx: Transaction) => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
@@ -26,22 +37,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   transactions,
   prices,
   discounts,
+  rentalPrices,
   printerName,
   onUpdatePrices,
+  onUpdateRentalPrices,
   onUpdateDiscounts,
   onUpdatePrinter,
   onClearTransactions,
+  onRestoreAllData,
   onUpdateTransactions,
+  onShowReceipt,
 }) => {
   // Filters matching VB.NET form controls
   const [period, setPeriod] = useState<ReportPeriod>("Harian");
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().substring(0, 10)
   );
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Administrative Price Modification States
   const [weekdayPrice, setWeekdayPrice] = useState<string>("");
   const [weekendPrice, setWeekendPrice] = useState<string>("");
+  const [loker1Price, setLoker1Price] = useState<string>("");
+  const [loker2Price, setLoker2Price] = useState<string>("");
+  const [tempat1Price, setTempat1Price] = useState<string>("");
+  const [tempat2Price, setTempat2Price] = useState<string>("");
 
   // Printer Configuration State
   const [printerInput, setPrinterInput] = useState<string>(printerName);
@@ -60,11 +80,119 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [txEditQty, setTxEditQty] = useState<string>("");
   const [txEditDayType, setTxEditDayType] = useState<"Senin-Jumat" | "Sabtu-Minggu/Libur">("Senin-Jumat");
   const [txEditDiscountId, setTxEditDiscountId] = useState<string>("");
+  const [txEditPaymentMethod, setTxEditPaymentMethod] = useState<"Tunai" | "QRIS" | "Debit/Kredit">("Tunai");
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
 
   // Custom UI modal & toast states (replaces blocked native confirm/alert)
   const [promoToDelete, setPromoToDelete] = useState<Discount | null>(null);
+  const [showEodModal, setShowEodModal] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Backup & Change Password States
+  const [selectedPasswordRole, setSelectedPasswordRole] = useState<"Admin" | "Kasir">("Admin");
+  const [newPassword, setNewPassword] = useState<string>("");
+  const [confirmPassword, setConfirmPassword] = useState<string>("");
+  const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
+
+  // Backup Export Handler
+  const handleExportBackup = () => {
+    try {
+      const backupData = {
+        prices,
+        rentalPrices,
+        discounts,
+        transactions,
+        printerName,
+        backup_date: new Date().toISOString(),
+        app_id: "gosplash_ticketing_backup"
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      
+      const formattedDate = new Date().toISOString().slice(0, 10);
+      downloadAnchor.setAttribute("download", `GoSplash_Backup_${formattedDate}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      setToastMessage({ type: "success", text: "Cadangan data (backup) berhasil diekspor!" });
+    } catch (err) {
+      setToastMessage({ type: "error", text: "Gagal mengekspor data cadangan." });
+    }
+  };
+
+  // Backup Import/Restore Handler
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const result = event.target?.result;
+        if (typeof result !== "string") {
+          throw new Error("Invalid file content");
+        }
+
+        const parsedData = JSON.parse(result);
+
+        // Basic validation
+        if (
+          !parsedData ||
+          parsedData.app_id !== "gosplash_ticketing_backup" ||
+          !Array.isArray(parsedData.prices) ||
+          !Array.isArray(parsedData.discounts) ||
+          !Array.isArray(parsedData.transactions) ||
+          !parsedData.rentalPrices
+        ) {
+          throw new Error("Format file backup tidak valid.");
+        }
+
+        onRestoreAllData({
+          prices: parsedData.prices,
+          rentalPrices: parsedData.rentalPrices,
+          discounts: parsedData.discounts,
+          transactions: parsedData.transactions,
+          printerName: parsedData.printerName || "Canon"
+        });
+
+        setToastMessage({ type: "success", text: "Data berhasil dipulihkan (restore) dari cadangan!" });
+        e.target.value = "";
+      } catch (err: any) {
+        setToastMessage({ type: "error", text: err.message || "Gagal memulihkan file cadangan." });
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Password Modification Handler
+  const handleChangePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!newPassword) {
+      setToastMessage({ type: "error", text: "Password baru tidak boleh kosong!" });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setToastMessage({ type: "error", text: "Password baru dan konfirmasi tidak cocok!" });
+      return;
+    }
+
+    if (selectedPasswordRole === "Admin") {
+      saveAdminPassword(newPassword);
+    } else {
+      saveKasirPassword(newPassword);
+    }
+
+    setToastMessage({ type: "success", text: `Kata sandi untuk ${selectedPasswordRole} berhasil diubah!` });
+    setNewPassword("");
+    setConfirmPassword("");
+  };
 
   // Auto-dismiss toast message after 3 seconds
   useEffect(() => {
@@ -86,16 +214,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setPrinterInput(printerName);
   }, [printerName]);
 
-  // Filter Transactions according to selected date & period
+  useEffect(() => {
+    if (rentalPrices) {
+      setLoker1Price(rentalPrices.harga_loker_1.toString());
+      setLoker2Price(rentalPrices.harga_loker_2.toString());
+      setTempat1Price(rentalPrices.harga_tempat_1.toString());
+      setTempat2Price(rentalPrices.harga_tempat_2.toString());
+    }
+  }, [rentalPrices]);
+
+  // Filter Transactions according to selected date, period, and search query
   const getFilteredTransactions = (): Transaction[] => {
     const targetDate = new Date(selectedDate);
     
     return transactions.filter((tx) => {
       const txDate = new Date(tx.tanggal);
       
+      let matchesPeriod = false;
       if (period === "Harian") {
         // Match exact day
-        return (
+        matchesPeriod = (
           txDate.getFullYear() === targetDate.getFullYear() &&
           txDate.getMonth() === targetDate.getMonth() &&
           txDate.getDate() === targetDate.getDate()
@@ -104,14 +242,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         // Match within last 7 days of target date
         const timeDiff = targetDate.getTime() - txDate.getTime();
         const dayDiff = timeDiff / (1000 * 3600 * 24);
-        return dayDiff >= 0 && dayDiff <= 7;
+        matchesPeriod = dayDiff >= 0 && dayDiff <= 7;
       } else {
         // Bulanan - Match same month and year
-        return (
+        matchesPeriod = (
           txDate.getFullYear() === targetDate.getFullYear() &&
           txDate.getMonth() === targetDate.getMonth()
         );
       }
+
+      if (!matchesPeriod) return false;
+
+      // Handle search query
+      if (searchQuery.trim() !== "") {
+        const query = searchQuery.toLowerCase().trim();
+        const matchesId = tx.id.toLowerCase().includes(query) || `#${tx.id}`.toLowerCase().includes(query);
+        const matchesPromo = tx.nama_diskon.toLowerCase().includes(query);
+        const matchesMethod = tx.metode_pembayaran?.toLowerCase().includes(query);
+        const matchesDayType = tx.jenis_hari.toLowerCase().includes(query);
+        return matchesId || matchesPromo || matchesMethod || matchesDayType;
+      }
+
+      return true;
     });
   };
 
@@ -198,6 +350,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     const weekdayNum = parseInt(weekdayPrice) || 0;
     const weekendNum = parseInt(weekendPrice) || 0;
+    const l1 = parseInt(loker1Price) || 0;
+    const l2 = parseInt(loker2Price) || 0;
+    const t1 = parseInt(tempat1Price) || 0;
+    const t2 = parseInt(tempat2Price) || 0;
 
     if (weekdayNum <= 0 || weekendNum <= 0) {
       setToastMessage({ type: "error", text: "Harga tiket harus lebih besar dari 0!" });
@@ -208,7 +364,98 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       { jenis_hari: "Senin-Jumat", harga_tiket: weekdayNum },
       { jenis_hari: "Sabtu-Minggu/Libur", harga_tiket: weekendNum },
     ]);
-    setToastMessage({ type: "success", text: "Tarif Tiket Berhasil Diperbarui!" });
+
+    onUpdateRentalPrices({
+      harga_loker_1: l1,
+      harga_loker_2: l2,
+      harga_tempat_1: t1,
+      harga_tempat_2: t2,
+    });
+
+    setToastMessage({ type: "success", text: "Tarif Tiket & Sewa Berhasil Diperbarui!" });
+  };
+
+  // Compile EOD stats for selectedDate
+  const getEodStats = () => {
+    const eodTx = transactions.filter((tx) => {
+      const txDate = new Date(tx.tanggal);
+      const targetDate = new Date(selectedDate);
+      return (
+        txDate.getFullYear() === targetDate.getFullYear() &&
+        txDate.getMonth() === targetDate.getMonth() &&
+        txDate.getDate() === targetDate.getDate()
+      );
+    });
+
+    const totalEodTxCount = eodTx.length;
+    const totalEodVisitorsCount = eodTx.reduce((sum, tx) => sum + tx.jumlah_pengunjung, 0);
+
+    const totalEodLokerRevenue = eodTx.reduce((sum, tx) => sum + (tx.harga_loker || 0), 0);
+    const totalEodTempatRevenue = eodTx.reduce((sum, tx) => sum + (tx.harga_tempat || 0), 0);
+    const totalEodRevenueSum = eodTx.reduce((sum, tx) => sum + tx.total_bayar, 0);
+    const totalEodTicketRevenue = totalEodRevenueSum - (totalEodLokerRevenue + totalEodTempatRevenue);
+
+    // Payment methods breakdown
+    const tunaiTotal = eodTx.filter(tx => tx.metode_pembayaran === "Tunai").reduce((sum, tx) => sum + tx.total_bayar, 0);
+    const qrisTotal = eodTx.filter(tx => tx.metode_pembayaran === "QRIS").reduce((sum, tx) => sum + tx.total_bayar, 0);
+    const debitTotal = eodTx.filter(tx => tx.metode_pembayaran === "Debit/Kredit").reduce((sum, tx) => sum + tx.total_bayar, 0);
+
+    return {
+      eodTx,
+      totalEodTxCount,
+      totalEodVisitorsCount,
+      totalEodLokerRevenue,
+      totalEodTempatRevenue,
+      totalEodTicketRevenue,
+      totalEodRevenueSum,
+      tunaiTotal,
+      qrisTotal,
+      debitTotal,
+    };
+  };
+
+  const eodData = getEodStats();
+
+  const handlePrintEod = () => {
+    const printContent = document.getElementById("eod-report-print-area")?.innerHTML;
+    if (!printContent) return;
+
+    const printWindow = window.open("", "_blank", "width=400,height=600");
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Cetak Laporan EOD GoSplash</title>
+            <style>
+              body {
+                font-family: 'Courier New', Courier, monospace;
+                width: 58mm;
+                margin: 0 auto;
+                padding: 10px;
+                font-size: 11px;
+                color: #000;
+                line-height: 1.4;
+              }
+              .center { text-align: center; }
+              .right { text-align: right; }
+              .bold { font-weight: bold; }
+              .separator { border-top: 1px dashed #000; margin: 8px 0; }
+              .double-separator { border-top: 2px double #000; margin: 8px 0; }
+              .flex-between { display: flex; justify-content: space-between; }
+              @media print {
+                body { width: 100%; margin: 0; padding: 0; }
+              }
+            </style>
+          </head>
+          <body onload="window.print(); window.close();">
+            \${printContent}
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } else {
+      window.print();
+    }
   };
 
   // Handle printer update submit
@@ -312,6 +559,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setTxToEdit(tx);
     setTxEditQty(tx.jumlah_pengunjung.toString());
     setTxEditDayType(tx.jenis_hari as "Senin-Jumat" | "Sabtu-Minggu/Libur");
+    setTxEditPaymentMethod((tx.metode_pembayaran || "Tunai") as "Tunai" | "QRIS" | "Debit/Kredit");
     
     // Find matching discount ID
     const matchedDisc = discounts.find(
@@ -347,6 +595,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     // Update the transaction list
     const updated = transactions.map((t) => {
       if (t.id === txToEdit.id) {
+        const paymentVal = t.bayar >= total ? t.bayar : total; // Make sure paid amount is at least total
         return {
           ...t,
           jumlah_pengunjung: qty,
@@ -355,7 +604,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           diskon_persen: discPercent,
           nama_diskon: discName,
           total_bayar: total,
-          kembalian: t.bayar >= total ? t.bayar - total : 0,
+          bayar: txEditPaymentMethod === "Tunai" ? t.bayar : total,
+          kembalian: txEditPaymentMethod === "Tunai" ? (paymentVal - total) : 0,
+          metode_pembayaran: txEditPaymentMethod,
         };
       }
       return t;
@@ -529,6 +780,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   ))}
                 </select>
               </div>
+
+              {/* Metode Pembayaran */}
+              <div className="grid grid-cols-1 gap-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Metode Pembayaran</label>
+                <select
+                  value={txEditPaymentMethod}
+                  onChange={(e) => setTxEditPaymentMethod(e.target.value as "Tunai" | "QRIS" | "Debit/Kredit")}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="Tunai">Tunai (Cash)</option>
+                  <option value="QRIS">QRIS Scan</option>
+                  <option value="Debit/Kredit">EDC Kartu</option>
+                </select>
+              </div>
             </div>
 
             <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
@@ -584,6 +849,183 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         </div>
       )}
+
+      {/* LAPORAN END OF DAY (EOD) MODAL */}
+      {showEodModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-slate-800 rounded-2xl max-w-md w-full border border-slate-700 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150 text-left">
+            
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-900 border-b border-slate-700 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-white text-base">Laporan End of Day (EOD)</h3>
+                <p className="text-xs text-slate-400">
+                  Tanggal: {new Date(selectedDate).toLocaleDateString("id-ID", { day: '2-digit', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowEodModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content / Preview Area */}
+            <div className="p-6 overflow-y-auto space-y-6 text-slate-200">
+              
+              {/* Info Widgets Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-900/60 border border-slate-700 p-3.5 rounded-xl">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Transaksi</span>
+                  <p className="text-xl font-black font-mono text-white mt-0.5">{eodData.totalEodTxCount}</p>
+                </div>
+                <div className="bg-slate-900/60 border border-slate-700 p-3.5 rounded-xl">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Pengunjung</span>
+                  <p className="text-xl font-black font-mono text-emerald-400 mt-0.5">{eodData.totalEodVisitorsCount} org</p>
+                </div>
+              </div>
+
+              {/* Income Constituents */}
+              <div className="bg-slate-900/40 border border-slate-700 rounded-xl p-4 space-y-3">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider pb-2 border-b border-slate-800">
+                  Konstituen Pemasukan
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Pemasukan Tiket:</span>
+                    <span className="font-semibold font-mono text-white">Rp {eodData.totalEodTicketRevenue.toLocaleString("id-ID")}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Pemasukan Loker:</span>
+                    <span className="font-semibold font-mono text-white">Rp {eodData.totalEodLokerRevenue.toLocaleString("id-ID")}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Pemasukan Tempat / Saung:</span>
+                    <span className="font-semibold font-mono text-white">Rp {eodData.totalEodTempatRevenue.toLocaleString("id-ID")}</span>
+                  </div>
+                  <div className="border-t border-slate-800 pt-2 flex justify-between font-bold text-base">
+                    <span className="text-amber-400">Total Pemasukan:</span>
+                    <span className="font-mono text-amber-400">Rp {eodData.totalEodRevenueSum.toLocaleString("id-ID")}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Methods */}
+              <div className="bg-slate-900/40 border border-slate-700 rounded-xl p-4 space-y-3">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider pb-2 border-b border-slate-800">
+                  Metode Pembayaran
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Tunai (Cash):</span>
+                    <span className="font-semibold font-mono text-white">Rp {eodData.tunaiTotal.toLocaleString("id-ID")}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">QRIS Scan:</span>
+                    <span className="font-semibold font-mono text-white">Rp {eodData.qrisTotal.toLocaleString("id-ID")}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">EDC Kartu:</span>
+                    <span className="font-semibold font-mono text-white">Rp {eodData.debitTotal.toLocaleString("id-ID")}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Printer Sim Preview Label */}
+              <p className="text-[11px] text-center text-slate-500 italic">
+                Nota akan dicetak menggunakan printer POS: <strong className="text-slate-400 font-sans">{printerName}</strong>
+              </p>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-4 bg-slate-900 border-t border-slate-700 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowEodModal(false)}
+                className="flex-1 py-2.5 px-4 bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-bold rounded-xl transition border border-slate-700"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintEod}
+                className="flex-1 py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-md"
+              >
+                <Printer className="w-4 h-4" />
+                Cetak Laporan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden printable template for thermal printer popup */}
+      <div id="eod-report-print-area" className="hidden">
+        <div style={{ textAlign: "center" }}>
+          <span style={{ fontWeight: "bold", fontSize: "14px" }}>GOSPLASH WATERPARK</span><br/>
+          <span>BSD City, Tangerang</span><br/>
+          <span>Telp: (021) 555-SPLASH</span><br/>
+          <div style={{ borderTop: "1px dashed #000", margin: "8px 0" }}></div>
+          <span style={{ fontWeight: "bold" }}>LAPORAN END OF DAY (EOD)</span><br/>
+          <span>Tanggal: {new Date(selectedDate).toLocaleDateString("id-ID", { day: '2-digit', month: 'long', year: 'numeric' })}</span><br/>
+          <span>Cetak: {new Date().toLocaleString("id-ID")}</span><br/>
+          <span>Printer: {printerName}</span><br/>
+          <div style={{ borderTop: "1px dashed #000", margin: "8px 0" }}></div>
+        </div>
+
+        <div style={{ fontWeight: "bold", marginBottom: "4px" }}>RINGKASAN OPERASIONAL:</div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Total Pengunjung:</span>
+          <span style={{ fontWeight: "bold" }}>{eodData.totalEodVisitorsCount} Orang</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Total Transaksi:</span>
+          <span>{eodData.totalEodTxCount} Slip</span>
+        </div>
+
+        <div style={{ borderTop: "1px dashed #000", margin: "8px 0" }}></div>
+        <div style={{ fontWeight: "bold", marginBottom: "4px" }}>RINCIAN PENDAPATAN:</div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Pemasukan Tiket:</span>
+          <span>Rp {eodData.totalEodTicketRevenue.toLocaleString("id-ID")}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Pemasukan Loker:</span>
+          <span>Rp {eodData.totalEodLokerRevenue.toLocaleString("id-ID")}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Pemasukan Tempat:</span>
+          <span>Rp {eodData.totalEodTempatRevenue.toLocaleString("id-ID")}</span>
+        </div>
+
+        <div style={{ borderTop: "2px double #000", margin: "8px 0" }}></div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "12px" }}>
+          <span>TOTAL INCOME:</span>
+          <span>Rp {eodData.totalEodRevenueSum.toLocaleString("id-ID")}</span>
+        </div>
+        <div style={{ borderTop: "2px double #000", margin: "8px 0" }}></div>
+
+        <div style={{ fontWeight: "bold", marginBottom: "4px" }}>METODE PEMBAYARAN:</div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Tunai (Cash):</span>
+          <span>Rp {eodData.tunaiTotal.toLocaleString("id-ID")}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>QRIS Scan:</span>
+          <span>Rp {eodData.qrisTotal.toLocaleString("id-ID")}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>EDC Kartu:</span>
+          <span>Rp {eodData.debitTotal.toLocaleString("id-ID")}</span>
+        </div>
+
+        <div style={{ borderTop: "1px dashed #000", margin: "8px 0" }}></div>
+        <div style={{ textAlign: "center", marginTop: "15px", fontStyle: "italic" }}>
+          <span>Laporan EOD Sukses Dibuat</span><br/>
+          <span>GoSplash Waterpark Team</span>
+        </div>
+      </div>
 
       {/* LOCKED ACCESS OVERLAY */}
       {isLocked && (
@@ -681,6 +1123,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               />
 
               <button
+                id="eod-report-btn"
+                onClick={() => setShowEodModal(true)}
+                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white font-semibold px-4 py-2 rounded-xl text-sm transition"
+              >
+                <Printer className="w-4 h-4" />
+                LAPORAN EOD
+              </button>
+
+              <button
                 id="export-excel-btn"
                 onClick={handleExportExcel}
                 className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-4 py-2 rounded-xl text-sm transition"
@@ -713,6 +1164,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </ResponsiveContainer>
           </div>
 
+          {/* SEARCH & FILTERS SUB-BAR */}
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between border-t border-slate-100 pt-4">
+            <span className="text-sm font-bold text-slate-700 flex items-center gap-1.5 self-start sm:self-auto">
+              <Coins className="w-4.5 h-4.5 text-blue-500" />
+              Histori Transaksi
+            </span>
+            <div className="relative w-full sm:w-72">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                <Search className="w-4 h-4" />
+              </span>
+              <input
+                type="text"
+                placeholder="Cari No. Nota, Promo, Metode..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs font-semibold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* DATA GRID VIEW (TRANSACTION LOG TABLE) */}
           <div className="border border-slate-150 rounded-xl overflow-hidden">
             <div className="overflow-x-auto max-h-[220px]">
@@ -722,6 +1202,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <th className="px-5 py-3">No. Nota</th>
                     <th className="px-5 py-3">Tanggal</th>
                     <th className="px-5 py-3">Tipe Hari</th>
+                    <th className="px-5 py-3">Metode</th>
                     <th className="px-5 py-3 text-right">Tarif</th>
                     <th className="px-5 py-3 text-center">Jumlah</th>
                     <th className="px-5 py-3">Diskon Promo</th>
@@ -732,7 +1213,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {filteredTx.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-5 py-10 text-center text-slate-400 font-sans">
+                      <td colSpan={9} className="px-5 py-10 text-center text-slate-400 font-sans">
                         Tidak ada transaksi terekam pada periode ini.
                       </td>
                     </tr>
@@ -757,6 +1238,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             {tx.jenis_hari}
                           </span>
                         </td>
+                        <td className="px-5 py-3.5">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                            tx.metode_pembayaran === "QRIS"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : tx.metode_pembayaran === "Debit/Kredit"
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
+                              : "bg-slate-50 text-slate-600 border-slate-200"
+                          }`}>
+                            {tx.metode_pembayaran || "Tunai"}
+                          </span>
+                        </td>
                         <td className="px-5 py-3.5 text-right font-medium text-slate-700 font-mono">
                           Rp {tx.harga_satuan.toLocaleString("id-ID")}
                         </td>
@@ -774,7 +1266,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           Rp {tx.total_bayar.toLocaleString("id-ID")}
                         </td>
                         <td className="px-5 py-3.5 text-center">
-                          <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {onShowReceipt && (
+                              <button
+                                type="button"
+                                onClick={() => onShowReceipt(tx)}
+                                className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                                title="Cetak Ulang Nota"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleStartEditTx(tx)}
@@ -848,12 +1350,90 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
 
+              {/* LOKER RATES ROW */}
+              <div className="border-t border-slate-100 pt-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <Key className="w-3.5 h-3.5 text-amber-600" />
+                  Sewa Loker
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-1.5">
+                    <label className="text-xs font-semibold text-slate-500">Tarif 1</label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-2 text-slate-400 text-sm">Rp</span>
+                      <input
+                        id="set-loker1-input"
+                        type="number"
+                        value={loker1Price}
+                        onChange={(e) => setLoker1Price(e.target.value)}
+                        required
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-1.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-1.5">
+                    <label className="text-xs font-semibold text-slate-500">Tarif 2</label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-2 text-slate-400 text-sm">Rp</span>
+                      <input
+                        id="set-loker2-input"
+                        type="number"
+                        value={loker2Price}
+                        onChange={(e) => setLoker2Price(e.target.value)}
+                        required
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-1.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* TEMPAT RATES ROW */}
+              <div className="border-t border-slate-100 pt-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <Tent className="w-3.5 h-3.5 text-amber-600" />
+                  Sewa Tempat / Saung
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-1.5">
+                    <label className="text-xs font-semibold text-slate-500">Tarif 1</label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-2 text-slate-400 text-sm">Rp</span>
+                      <input
+                        id="set-tempat1-input"
+                        type="number"
+                        value={tempat1Price}
+                        onChange={(e) => setTempat1Price(e.target.value)}
+                        required
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-1.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-1.5">
+                    <label className="text-xs font-semibold text-slate-500">Tarif 2</label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-2 text-slate-400 text-sm">Rp</span>
+                      <input
+                        id="set-tempat2-input"
+                        type="number"
+                        value={tempat2Price}
+                        onChange={(e) => setTempat2Price(e.target.value)}
+                        required
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-1.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <button
                 id="update-harga-btn"
                 type="submit"
-                className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition"
+                className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition mt-2"
               >
-                UPDATE HARGA TIKET
+                UPDATE TARIFF & HARGA SEWA
               </button>
             </form>
 
@@ -1027,6 +1607,161 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               })}
             </div>
           </div>
+        </div>
+
+        {/* ADDITIONAL CONFIGURATIONS: BACKUP/RESTORE & PASSWORD MANAGER */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          
+          {/* BACKUP & RESTORE DATA */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
+            <div className="flex items-center space-x-2 border-b border-slate-100 pb-4">
+              <Database className="w-5 h-5 text-emerald-600" />
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-base">Ekspor & Impor Data (Backup)</h3>
+                <p className="text-xs text-slate-400">Cadangkan atau pulihkan data transaksi dan konfigurasi</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 text-sm text-slate-600">
+              <p className="text-xs leading-relaxed">
+                Fitur ini membantu Anda mengekspor seluruh transaksi, konfigurasi harga tiket, harga sewa, dan daftar promo aktif ke sebuah file backup <strong>(.json)</strong> lokal. Anda dapat mengimpor file tersebut di kemudian hari untuk memulihkan seluruh data operasional GoSplash Anda.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                {/* Export Button */}
+                <button
+                  type="button"
+                  id="backup-export-btn"
+                  onClick={handleExportBackup}
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs transition shadow-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  EKSPOR CADANGAN
+                </button>
+
+                {/* Import/Restore Button Container */}
+                <div className="relative">
+                  <input
+                    type="file"
+                    id="backup-import-file-input"
+                    accept=".json"
+                    onChange={handleImportBackup}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  <button
+                    type="button"
+                    id="backup-import-trigger-btn"
+                    className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl text-xs transition shadow-sm pointer-events-none"
+                  >
+                    <Upload className="w-4 h-4" />
+                    IMPOR & PULIHKAN
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* PASSWORD SECURITY MANAGER */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
+            <div className="flex items-center space-x-2 border-b border-slate-100 pb-4">
+              <Shield className="w-5 h-5 text-indigo-600" />
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-base">Keamanan & Password Akses</h3>
+                <p className="text-xs text-slate-400">Ubah kata sandi untuk masuk sebagai Admin atau Kasir</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleChangePasswordSubmit} className="space-y-4">
+              {/* Role Picker for Password Change */}
+              <div className="grid grid-cols-1 gap-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pilih Peran (Role)</label>
+                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    id="change-pswd-role-admin"
+                    onClick={() => setSelectedPasswordRole("Admin")}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition duration-200 ${
+                      selectedPasswordRole === "Admin"
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    ADMIN
+                  </button>
+                  <button
+                    type="button"
+                    id="change-pswd-role-kasir"
+                    onClick={() => setSelectedPasswordRole("Kasir")}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition duration-200 ${
+                      selectedPasswordRole === "Kasir"
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    KASIR
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* New Password */}
+                <div className="grid grid-cols-1 gap-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Password Baru</label>
+                  <div className="relative">
+                    <input
+                      id="change-pswd-new-input"
+                      type={showNewPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Min. 4 karakter"
+                      required
+                      className="w-full bg-white border border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs font-semibold text-slate-800 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                    >
+                      {showNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm Password */}
+                <div className="grid grid-cols-1 gap-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Konfirmasi Password</label>
+                  <div className="relative">
+                    <input
+                      id="change-pswd-confirm-input"
+                      type={showConfirmPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Masukkan ulang..."
+                      required
+                      className="w-full bg-white border border-slate-300 rounded-xl pl-3 pr-9 py-2 text-xs font-semibold text-slate-800 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                id="change-password-submit-btn"
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition mt-2 shadow-sm uppercase tracking-wider"
+              >
+                UBAH PASSWORD {selectedPasswordRole}
+              </button>
+            </form>
+          </div>
+
         </div>
 
       </div>

@@ -140,6 +140,20 @@ export const ReceiptPrintout: React.FC<ReceiptPrintoutProps> = ({
                     <span>-{transaction.diskon_persen}%</span>
                   </div>
                 )}
+
+                {transaction.sewa_loker && transaction.sewa_loker !== "Tidak" && (
+                  <div className="flex justify-between text-[11px] text-neutral-800 pt-1 border-t border-dotted border-neutral-350">
+                    <span>Sewa Loker:</span>
+                    <span>Rp {(transaction.harga_loker || 0).toLocaleString("id-ID")}</span>
+                  </div>
+                )}
+
+                {transaction.sewa_tempat && transaction.sewa_tempat !== "Tidak" && (
+                  <div className="flex justify-between text-[11px] text-neutral-800 pt-1 border-t border-dotted border-neutral-350">
+                    <span>Sewa Tempat/Saung:</span>
+                    <span>Rp {(transaction.harga_tempat || 0).toLocaleString("id-ID")}</span>
+                  </div>
+                )}
               </div>
               
               <div className="border-t border-dashed border-neutral-400 my-3"></div>
@@ -150,13 +164,21 @@ export const ReceiptPrintout: React.FC<ReceiptPrintoutProps> = ({
                   <span>Rp {transaction.total_bayar.toLocaleString("id-ID")}</span>
                 </div>
                 <div className="flex justify-between text-neutral-700">
-                  <span>Bayar:</span>
-                  <span>Rp {transaction.bayar.toLocaleString("id-ID")}</span>
+                  <span>Metode:</span>
+                  <span className="font-bold">{transaction.metode_pembayaran || "Tunai"}</span>
                 </div>
-                <div className="flex justify-between text-neutral-700 font-bold">
-                  <span>Kembalian:</span>
-                  <span>Rp {transaction.kembalian.toLocaleString("id-ID")}</span>
-                </div>
+                {(transaction.metode_pembayaran === "Tunai" || !transaction.metode_pembayaran) && (
+                  <>
+                    <div className="flex justify-between text-neutral-700">
+                      <span>Bayar:</span>
+                      <span>Rp {transaction.bayar.toLocaleString("id-ID")}</span>
+                    </div>
+                    <div className="flex justify-between text-neutral-700 font-bold">
+                      <span>Kembalian:</span>
+                      <span>Rp {transaction.kembalian.toLocaleString("id-ID")}</span>
+                    </div>
+                  </>
+                )}
               </div>
               
               <div className="border-t border-dashed border-neutral-400 my-3"></div>

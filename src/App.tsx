@@ -16,9 +16,11 @@ import {
   addTransaction,
   loadPrinterName,
   savePrinterName,
+  loadRentalPrices,
+  saveRentalPrices,
   clearAllData,
 } from "./utils/storage";
-import { UserRole, TicketPrice, Discount, Transaction } from "./types";
+import { UserRole, TicketPrice, Discount, Transaction, RentalPrices } from "./types";
 import { RoleSelector } from "./components/RoleSelector";
 import { CashierPanel } from "./components/CashierPanel";
 import { AdminPanel } from "./components/AdminPanel";
@@ -33,6 +35,12 @@ export default function App() {
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [printerName, setPrinterName] = useState<string>("Canon");
+  const [rentalPrices, setRentalPrices] = useState<RentalPrices>({
+    harga_loker_1: 10000,
+    harga_loker_2: 20000,
+    harga_tempat_1: 50000,
+    harga_tempat_2: 100000,
+  });
 
   // Receipt Modal State
   const [activeReceipt, setActiveReceipt] = useState<Transaction | null>(null);
@@ -44,6 +52,7 @@ export default function App() {
     setDiscounts(loadDiscounts());
     setTransactions(loadTransactions());
     setPrinterName(loadPrinterName());
+    setRentalPrices(loadRentalPrices());
   }, []);
 
   // Handle Login success
@@ -62,6 +71,12 @@ export default function App() {
   const handleUpdatePrices = (newPrices: TicketPrice[]) => {
     setPrices(newPrices);
     savePrices(newPrices);
+  };
+
+  // Sync rental prices update
+  const handleUpdateRentalPrices = (newRentalPrices: RentalPrices) => {
+    setRentalPrices(newRentalPrices);
+    saveRentalPrices(newRentalPrices);
   };
 
   // Sync discounts update
@@ -99,7 +114,29 @@ export default function App() {
     setDiscounts(loadDiscounts());
     setTransactions(loadTransactions());
     setPrinterName(loadPrinterName());
+    setRentalPrices(loadRentalPrices());
     setActiveReceipt(null);
+  };
+
+  // Restore all data from backup file
+  const handleRestoreAllData = (backupData: {
+    prices: TicketPrice[];
+    rentalPrices: RentalPrices;
+    discounts: Discount[];
+    transactions: Transaction[];
+    printerName: string;
+  }) => {
+    savePrices(backupData.prices);
+    saveRentalPrices(backupData.rentalPrices);
+    saveDiscounts(backupData.discounts);
+    saveTransactions(backupData.transactions);
+    savePrinterName(backupData.printerName);
+
+    setPrices(backupData.prices);
+    setRentalPrices(backupData.rentalPrices);
+    setDiscounts(backupData.discounts);
+    setTransactions(backupData.transactions);
+    setPrinterName(backupData.printerName);
   };
 
   if (!isLoggedIn) {
@@ -125,6 +162,7 @@ export default function App() {
             <CashierPanel
               prices={prices}
               discounts={discounts}
+              rentalPrices={rentalPrices}
               onAddTransaction={handleAddTransaction}
               onShowReceipt={setActiveReceipt}
             />
@@ -137,12 +175,16 @@ export default function App() {
               transactions={transactions}
               prices={prices}
               discounts={discounts}
+              rentalPrices={rentalPrices}
               printerName={printerName}
               onUpdatePrices={handleUpdatePrices}
+              onUpdateRentalPrices={handleUpdateRentalPrices}
               onUpdateDiscounts={handleUpdateDiscounts}
               onUpdatePrinter={handleUpdatePrinter}
               onClearTransactions={handleResetAllData}
+              onRestoreAllData={handleRestoreAllData}
               onUpdateTransactions={handleUpdateTransactions}
+              onShowReceipt={setActiveReceipt}
             />
           </section>
         </div>

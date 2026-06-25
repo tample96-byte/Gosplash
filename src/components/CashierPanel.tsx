@@ -4,12 +4,13 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { TicketPrice, Discount, Transaction } from "../types";
-import { Ticket, Users, Percent, Wallet, Banknote, RefreshCw, Printer, AlertTriangle } from "lucide-react";
+import { TicketPrice, Discount, Transaction, RentalPrices } from "../types";
+import { Ticket, Users, Percent, Wallet, Banknote, RefreshCw, Printer, AlertTriangle, QrCode, CreditCard, Key, Tent } from "lucide-react";
 
 interface CashierPanelProps {
   prices: TicketPrice[];
   discounts: Discount[];
+  rentalPrices: RentalPrices;
   onAddTransaction: (tx: Omit<Transaction, "id">) => Transaction;
   onShowReceipt: (tx: Transaction) => void;
 }
@@ -17,6 +18,7 @@ interface CashierPanelProps {
 export const CashierPanel: React.FC<CashierPanelProps> = ({
   prices,
   discounts,
+  rentalPrices,
   onAddTransaction,
   onShowReceipt,
 }) => {
@@ -31,10 +33,40 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
   const [isKurang, setIsKurang] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Suggested Upgrade States: Payment Method Options
+  const [paymentMethod, setPaymentMethod] = useState<"Tunai" | "QRIS" | "Debit/Kredit">("Tunai");
+  const [cardIssuer, setCardIssuer] = useState<string>("BCA");
+  const [cardRefNo, setCardRefNo] = useState<string>("");
+
+  // Locker & Place extra rentals (supports Tarif 1 and Tarif 2 only)
+  const [sewaLoker, setSewaLoker] = useState<"Tidak" | "Tarif 1" | "Tarif 2">("Tidak");
+  const [sewaTempat, setSewaTempat] = useState<"Tidak" | "Tarif 1" | "Tarif 2">("Tidak");
+
+  const LOKER_PRICES = {
+    "Tidak": 0,
+    "Tarif 1": rentalPrices.harga_loker_1,
+    "Tarif 2": rentalPrices.harga_loker_2,
+  };
+
+  const TEMPAT_PRICES = {
+    "Tidak": 0,
+    "Tarif 1": rentalPrices.harga_tempat_1,
+    "Tarif 2": rentalPrices.harga_tempat_2,
+  };
+
   // Clear validation error when inputs are changed
   useEffect(() => {
     setErrorMsg(null);
-  }, [jumlahPengunjung, bayar, selectedDiscountId]);
+  }, [jumlahPengunjung, bayar, selectedDiscountId, paymentMethod, sewaLoker, sewaTempat]);
+
+  // Auto-fill payment amount for QRIS & Card payments (no change)
+  useEffect(() => {
+    if (paymentMethod !== "Tunai") {
+      setBayar(totalAkhir.toString());
+    } else {
+      setBayar("");
+    }
+  }, [paymentMethod, totalAkhir]);
 
   // Advanced feature: Let user override day type for easy testing of weekend prices!
   const [dayTypeOverride, setDayTypeOverride] = useState<"Auto" | "Senin-Jumat" | "Sabtu-Minggu/Libur">("Auto");
@@ -93,9 +125,11 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
   useEffect(() => {
     const qty = parseInt(jumlahPengunjung) || 0;
     const subtotal = hargaSatuan * qty;
-    const total = subtotal - subtotal * (persenDiskon / 100);
-    setTotalAkhir(total);
-  }, [hargaSatuan, jumlahPengunjung, persenDiskon]);
+    const ticketTotal = subtotal - subtotal * (persenDiskon / 100);
+    const lockerCost = LOKER_PRICES[sewaLoker];
+    const placeCost = TEMPAT_PRICES[sewaTempat];
+    setTotalAkhir(ticketTotal + lockerCost + placeCost);
+  }, [hargaSatuan, jumlahPengunjung, persenDiskon, sewaLoker, sewaTempat]);
 
   // Recalculate change (kembalian)
   useEffect(() => {
@@ -121,7 +155,12 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
     setJumlahPengunjung("");
     setSelectedDiscountId(discounts[0]?.id || "");
     setPersenDiskon(0);
+    setSewaLoker("Tidak");
+    setSewaTempat("Tidak");
     setBayar("");
+    setPaymentMethod("Tunai");
+    setCardIssuer("BCA");
+    setCardRefNo("");
     setErrorMsg(null);
   };
 
@@ -135,7 +174,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
       setErrorMsg("Masukkan jumlah pengunjung yang valid!");
       return;
     }
-    if (isKurang || paidAmount < totalAkhir) {
+    if (paymentMethod === "Tunai" && (isKurang || paidAmount < totalAkhir)) {
       setErrorMsg("Uang pembayaran tidak mencukupi!");
       return;
     }
@@ -152,8 +191,13 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
       nama_diskon: namaDiskon,
       total_bayar: totalAkhir,
       bayar: paidAmount,
-      kembalian: paidAmount - totalAkhir,
+      kembalian: paymentMethod === "Tunai" ? paidAmount - totalAkhir : 0,
       jenis_hari: activeDayType,
+      metode_pembayaran: paymentMethod,
+      sewa_loker: sewaLoker,
+      sewa_tempat: sewaTempat,
+      harga_loker: LOKER_PRICES[sewaLoker],
+      harga_tempat: TEMPAT_PRICES[sewaTempat],
     });
 
     // Reset fields
@@ -283,6 +327,45 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
             </div>
           </div>
 
+          {/* Loker & Tempat Rentals (Requested upgrade) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Sewa Loker */}
+            <div className="grid grid-cols-1 gap-1.5">
+              <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                <Key className="w-4 h-4 text-slate-400" />
+                Sewa Loker
+              </label>
+              <select
+                id="sewa-loker-select"
+                value={sewaLoker}
+                onChange={(e) => setSewaLoker(e.target.value as any)}
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              >
+                <option value="Tidak">Tidak Sewa</option>
+                <option value="Tarif 1">Rp {rentalPrices.harga_loker_1.toLocaleString("id-ID")}</option>
+                <option value="Tarif 2">Rp {rentalPrices.harga_loker_2.toLocaleString("id-ID")}</option>
+              </select>
+            </div>
+
+            {/* Sewa Tempat */}
+            <div className="grid grid-cols-1 gap-1.5">
+              <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                <Tent className="w-4 h-4 text-slate-400" />
+                Sewa Tempat / Saung
+              </label>
+              <select
+                id="sewa-tempat-select"
+                value={sewaTempat}
+                onChange={(e) => setSewaTempat(e.target.value as any)}
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              >
+                <option value="Tidak">Tidak Sewa</option>
+                <option value="Tarif 1">Rp {rentalPrices.harga_tempat_1.toLocaleString("id-ID")}</option>
+                <option value="Tarif 2">Rp {rentalPrices.harga_tempat_2.toLocaleString("id-ID")}</option>
+              </select>
+            </div>
+          </div>
+
           {/* Total Display (High Highlighted) */}
           <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-inner border border-slate-800 flex flex-col justify-center">
             <span className="text-[10px] font-bold text-blue-400 tracking-widest uppercase mb-1">
@@ -296,72 +379,183 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
             </div>
             
             {/* Ticket breakdown snippet */}
-            {parseInt(jumlahPengunjung) > 0 && (
-              <div className="mt-3 pt-3 border-t border-slate-800 text-xs text-slate-400 flex justify-between">
-                <span>Rincian: {jumlahPengunjung} Tiket x Rp {hargaSatuan.toLocaleString("id-ID")}</span>
-                {persenDiskon > 0 && <span>Hemat: {persenDiskon}%</span>}
+            {((parseInt(jumlahPengunjung) > 0) || sewaLoker !== "Tidak" || sewaTempat !== "Tidak") && (
+              <div className="mt-3 pt-3 border-t border-slate-800 text-xs text-slate-400 space-y-1">
+                <div className="flex justify-between">
+                  <span>Rincian: {jumlahPengunjung || 0} Tiket x Rp {hargaSatuan.toLocaleString("id-ID")}</span>
+                  {persenDiskon > 0 && <span>Hemat: {persenDiskon}%</span>}
+                </div>
+                {sewaLoker !== "Tidak" && (
+                  <div className="flex justify-between text-[11px] text-blue-400/90">
+                    <span>Sewa Loker (Rp {LOKER_PRICES[sewaLoker].toLocaleString("id-ID")})</span>
+                    <span>+Rp {LOKER_PRICES[sewaLoker].toLocaleString("id-ID")}</span>
+                  </div>
+                )}
+                {sewaTempat !== "Tidak" && (
+                  <div className="flex justify-between text-[11px] text-blue-400/90">
+                    <span>Sewa Tempat/Saung (Rp {TEMPAT_PRICES[sewaTempat].toLocaleString("id-ID")})</span>
+                    <span>+Rp {TEMPAT_PRICES[sewaTempat].toLocaleString("id-ID")}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Paid input */}
+          {/* Payment Method Selector */}
           <div className="grid grid-cols-1 gap-1.5">
             <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
               <Wallet className="w-4 h-4 text-slate-400" />
-              Masukkan Nominal Uang Diterima (Rp)
+              Metode Pembayaran
             </label>
-            <div className="relative">
-              <span className="absolute left-3.5 top-2.5 text-slate-500 font-medium">Rp</span>
-              <input
-                id="bayar-input"
-                type="number"
-                min="0"
-                placeholder="Contoh: 100000"
-                value={bayar}
-                onChange={(e) => setBayar(e.target.value)}
-                required
-                className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-              />
-              {/* Quick denominational buttons for cashier ease of use! */}
-              {totalAkhir > 0 && (
-                <div className="flex gap-1.5 mt-2 flex-wrap">
-                  {[totalAkhir, 20000, 50000, 100000].map((denom, idx) => {
-                    if (denom < totalAkhir && denom !== totalAkhir) return null;
-                    // Round up nicely if needed
-                    const actualDenom = denom === totalAkhir ? denom : denom;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setBayar(actualDenom.toString())}
-                        className="text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded border border-slate-200 transition"
-                      >
-                        Rp {actualDenom.toLocaleString("id-ID")}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: "Tunai", label: "Tunai (Cash)", icon: Banknote },
+                { id: "QRIS", label: "QRIS Scan", icon: QrCode },
+                { id: "Debit/Kredit", label: "EDC Kartu", icon: CreditCard },
+              ].map((m) => {
+                const Icon = m.icon;
+                const active = paymentMethod === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setPaymentMethod(m.id as any)}
+                    className={`flex flex-col items-center justify-center py-2.5 px-1 rounded-xl border text-center transition-all ${
+                      active
+                        ? "bg-blue-50 border-blue-500 text-blue-700 shadow-sm"
+                        : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300"
+                    }`}
+                  >
+                    <Icon className="w-4.5 h-4.5 mb-1" />
+                    <span className="text-[10px] font-bold">{m.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Change Display */}
-          <div className="grid grid-cols-1 gap-1.5">
-            <span className="text-sm font-semibold text-slate-700">Uang Kembalian</span>
-            <div
-              id="kembalian-display"
-              className={`rounded-xl p-3 border font-mono font-bold text-lg text-center flex items-center justify-center gap-2 ${
-                isKurang
-                  ? "bg-rose-50 text-rose-700 border-rose-200 animate-pulse"
-                  : parseFloat(bayar) > 0
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : "bg-slate-50 text-slate-500 border-slate-200"
-              }`}
-            >
-              {isKurang && <AlertTriangle className="w-5 h-5 text-rose-600" />}
-              {kembalianText}
+          {/* Conditional Payment Method Input Forms */}
+          {paymentMethod === "Tunai" && (
+            <>
+              {/* Paid input */}
+              <div className="grid grid-cols-1 gap-1.5 animate-in fade-in duration-150">
+                <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                  <Banknote className="w-4 h-4 text-slate-400" />
+                  Masukkan Nominal Uang Diterima (Rp)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-slate-500 font-medium">Rp</span>
+                  <input
+                    id="bayar-input"
+                    type="number"
+                    min="0"
+                    placeholder="Contoh: 100000"
+                    value={bayar}
+                    onChange={(e) => setBayar(e.target.value)}
+                    required={paymentMethod === "Tunai"}
+                    className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                  {/* Quick denominational buttons for cashier ease of use! */}
+                  {totalAkhir > 0 && (
+                    <div className="flex gap-1.5 mt-2 flex-wrap">
+                      {[totalAkhir, 20000, 50000, 100000].map((denom, idx) => {
+                        if (denom < totalAkhir && denom !== totalAkhir) return null;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setBayar(denom.toString())}
+                            className="text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded border border-slate-200 transition"
+                          >
+                            Rp {denom.toLocaleString("id-ID")}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Change Display */}
+              <div className="grid grid-cols-1 gap-1.5 animate-in fade-in duration-150">
+                <span className="text-sm font-semibold text-slate-700">Uang Kembalian</span>
+                <div
+                  id="kembalian-display"
+                  className={`rounded-xl p-3 border font-mono font-bold text-lg text-center flex items-center justify-center gap-2 ${
+                    isKurang
+                      ? "bg-rose-50 text-rose-700 border-rose-200 animate-pulse"
+                      : parseFloat(bayar) > 0
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-slate-50 text-slate-500 border-slate-200"
+                  }`}
+                >
+                  {isKurang && <AlertTriangle className="w-5 h-5 text-rose-600" />}
+                  {kembalianText}
+                </div>
+              </div>
+            </>
+          )}
+
+          {paymentMethod === "QRIS" && (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center space-y-3 animate-in fade-in duration-150">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pindai QRIS GoSplash</span>
+              {/* Beautiful Mock QR Code block */}
+              <div className="relative bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center">
+                <div className="w-28 h-28 bg-slate-100 flex flex-col items-center justify-center border border-dashed border-slate-300 rounded-lg overflow-hidden relative">
+                  <QrCode className="w-20 h-20 text-slate-800" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/10 backdrop-blur-[0.5px]">
+                    <span className="bg-emerald-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow">
+                      QRIS LIVE
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-slate-400 mt-2">NMID: ID1029384756</span>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-slate-600 font-sans">
+                  Tunjukkan Kode QRIS di atas kepada pengunjung.
+                </p>
+                <p className="text-[11px] font-bold text-emerald-600 mt-1 flex items-center justify-center gap-1">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                  Menunggu Pembayaran (Otomatis)...
+                </p>
+              </div>
             </div>
-          </div>
+          )}
+
+          {paymentMethod === "Debit/Kredit" && (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 animate-in fade-in duration-150">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block text-center">Data Pembayaran Kartu EDC</span>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-1">
+                  <span className="text-xs font-bold text-slate-500">Mesin EDC</span>
+                  <select
+                    value={cardIssuer}
+                    onChange={(e) => setCardIssuer(e.target.value)}
+                    className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="BCA">EDC BCA</option>
+                    <option value="Mandiri">EDC Mandiri</option>
+                    <option value="BRI">EDC BRI</option>
+                    <option value="BNI">EDC BNI</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 gap-1">
+                  <span className="text-xs font-bold text-slate-500">No. Reff / Approval</span>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 859402"
+                    value={cardRefNo}
+                    onChange={(e) => setCardRefNo(e.target.value)}
+                    className="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 font-sans text-center leading-tight">
+                Pastikan transaksi kartu sukses di mesin EDC fisik sebelum menyimpan transaksi.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Form Actions */}

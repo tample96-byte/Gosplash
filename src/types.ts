@@ -16,6 +16,18 @@ export interface Transaction {
   bayar: number;
   kembalian: number;
   jenis_hari: "Senin-Jumat" | "Sabtu-Minggu/Libur";
+  metode_pembayaran?: "Tunai" | "QRIS" | "Debit/Kredit";
+  sewa_loker?: "Tidak" | "Tarif 1" | "Tarif 2";
+  sewa_tempat?: "Tidak" | "Tarif 1" | "Tarif 2";
+  harga_loker?: number;
+  harga_tempat?: number;
+}
+
+export interface RentalPrices {
+  harga_loker_1: number;
+  harga_loker_2: number;
+  harga_tempat_1: number;
+  harga_tempat_2: number;
 }
 
 export interface Discount {

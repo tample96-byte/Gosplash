@@ -19,6 +19,9 @@ export const translations = {
     password_placeholder: "Masukkan password...",
     login_btn: "MASUK SEKARANG",
     wrong_password: "Password salah! Silakan coba lagi.",
+    today_total_revenue: "Pendapatan Hari Ini",
+    today_total_transactions: "Transaksi Hari Ini",
+    today_total_visitors: "Pengunjung Hari Ini",
 
     // Cashier Panel
     cashier_title: "Input Transaksi Tiket GoSplash",
@@ -147,6 +150,9 @@ export const translations = {
     password_placeholder: "Enter password...",
     login_btn: "LOGIN NOW",
     wrong_password: "Incorrect password! Please try again.",
+    today_total_revenue: "Today's Revenue",
+    today_total_transactions: "Today's Transactions",
+    today_total_visitors: "Today's Visitors",
 
     // Cashier Panel
     cashier_title: "GoSplash Ticket Transaction Input",

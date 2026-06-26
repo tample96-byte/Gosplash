@@ -684,9 +684,9 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
           <button
             id="simpan-transaksi-btn"
             type="submit"
-            disabled={jumlahPengunjung === "" || bayar === "" || isKurang || parseInt(jumlahPengunjung) <= 0}
+            disabled={bayar === "" || isKurang || (parseInt(jumlahPengunjung) || 0) < 0 || ((parseInt(jumlahPengunjung) || 0) === 0 && sewaLoker === "Tidak" && sewaTempat === "Tidak")}
             className={`flex-1 flex items-center justify-center gap-2 font-bold py-3 px-6 rounded-xl shadow-md transition-all duration-200 ${
-              jumlahPengunjung === "" || bayar === "" || isKurang || parseInt(jumlahPengunjung) <= 0
+              bayar === "" || isKurang || (parseInt(jumlahPengunjung) || 0) < 0 || ((parseInt(jumlahPengunjung) || 0) === 0 && sewaLoker === "Tidak" && sewaTempat === "Tidak")
                 ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none border border-slate-200"
                 : "bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-emerald-100"
             }`}

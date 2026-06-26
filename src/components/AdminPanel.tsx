@@ -307,9 +307,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCurrentPage(1);
   }, [period, selectedDate, searchQuery]);
 
+  const parseLocalDatePickerDate = (dateStr: string): Date => {
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1; // 0-indexed
+      const day = parseInt(parts[2], 10);
+      return new Date(year, month, day);
+    }
+    return new Date(dateStr);
+  };
+
   // Filter Transactions according to selected date, period, and search query
   const getFilteredTransactions = (): Transaction[] => {
-    const targetDate = new Date(selectedDate);
+    const targetDate = parseLocalDatePickerDate(selectedDate);
     
     return transactions.filter((tx) => {
       const txDate = new Date(tx.tanggal);
@@ -384,7 +395,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     } else if (period === "Mingguan") {
       // Group by individual days in the last 7 days from targetDate
       const data: { label: string; Pendapatan: number; Pengunjung: number }[] = [];
-      const targetDate = new Date(selectedDate);
+      const targetDate = parseLocalDatePickerDate(selectedDate);
       
       for (let i = 6; i >= 0; i--) {
         const d = new Date(targetDate.getTime() - i * 24 * 60 * 60 * 1000);
@@ -409,7 +420,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     } else {
       // Bulanan: Group by weeks (Week 1, Week 2, etc. of selected month)
       const data: { label: string; Pendapatan: number; Pengunjung: number }[] = [];
-      const targetDate = new Date(selectedDate);
+      const targetDate = parseLocalDatePickerDate(selectedDate);
       
       for (let w = 1; w <= 5; w++) {
         const weekTx = filteredTx.filter((tx) => {
@@ -472,7 +483,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const getEodStats = () => {
     const eodTx = transactions.filter((tx) => {
       const txDate = new Date(tx.tanggal);
-      const targetDate = new Date(selectedDate);
+      const targetDate = parseLocalDatePickerDate(selectedDate);
       return (
         txDate.getFullYear() === targetDate.getFullYear() &&
         txDate.getMonth() === targetDate.getMonth() &&

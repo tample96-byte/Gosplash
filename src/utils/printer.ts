@@ -239,15 +239,17 @@ export function generateEscPosBytes(tx: Transaction): Uint8Array {
   addText("--------------------------------\n");
 
   // 6. Items Sold
-  addText("Tiket Masuk\n");
-  const qtyStr = `${tx.jumlah_pengunjung}x Rp ${tx.harga_satuan.toLocaleString("id-ID")}`;
   const totalItem = tx.harga_satuan * tx.jumlah_pengunjung;
-  const totalItemStr = `Rp ${totalItem.toLocaleString("id-ID")}`;
-  const padLen = 32 - qtyStr.length - totalItemStr.length;
-  addText(`${qtyStr}${" ".repeat(padLen > 0 ? padLen : 1)}${totalItemStr}\n`);
+  if (tx.jumlah_pengunjung > 0) {
+    addText("Tiket Masuk\n");
+    const qtyStr = `${tx.jumlah_pengunjung}x Rp ${tx.harga_satuan.toLocaleString("id-ID")}`;
+    const totalItemStr = `Rp ${totalItem.toLocaleString("id-ID")}`;
+    const padLen = 32 - qtyStr.length - totalItemStr.length;
+    addText(`${qtyStr}${" ".repeat(padLen > 0 ? padLen : 1)}${totalItemStr}\n`);
+  }
 
   // Discounts
-  if (tx.diskon_persen > 0) {
+  if (tx.diskon_persen > 0 && tx.jumlah_pengunjung > 0) {
     const diskonLabel = `Diskon (${tx.diskon_persen}%)`;
     const diskonVal = `-Rp ${(totalItem * tx.diskon_persen / 100).toLocaleString("id-ID")}`;
     const padD = 32 - diskonLabel.length - diskonVal.length;

@@ -7,21 +7,25 @@ import React, { useState } from "react";
 import { UserRole } from "../types";
 import { Lock, User, Shield, Eye, EyeOff, LogIn, AlertCircle } from "lucide-react";
 import { loadAdminPassword, loadKasirPassword } from "../utils/storage";
-import { translations } from "../utils/lang";
+import { Language, translations } from "../utils/lang";
 
 interface LoginPageProps {
   onLoginSuccess: (role: UserRole) => void;
+  language: Language;
+  onLanguageChange: (lang: Language) => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({
   onLoginSuccess,
+  language,
+  onLanguageChange,
 }) => {
   const [role, setRole] = useState<UserRole>("Kasir");
   const [password, setPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
-  const t = translations.ID;
+  const t = translations[language];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +53,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       {/* Main Login Card */}
       <div className="w-full max-w-md bg-slate-900 border border-slate-800/80 rounded-3xl shadow-2xl overflow-hidden p-8 relative z-10">
         
+        {/* Language selector in login card */}
+        <div className="absolute top-4 right-4 flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+          <button
+            type="button"
+            onClick={() => onLanguageChange("ID")}
+            className={`px-2 py-1 text-[9px] font-black rounded transition ${
+              language === "ID"
+                ? "bg-blue-600 text-white"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            ID
+          </button>
+          <button
+            type="button"
+            onClick={() => onLanguageChange("EN")}
+            className={`px-2 py-1 text-[9px] font-black rounded transition ${
+              language === "EN"
+                ? "bg-blue-600 text-white"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            EN
+          </button>
+        </div>
+
         {/* Brand Banner */}
         <div className="text-center mb-8">
           <div className="inline-flex bg-blue-600 p-4 rounded-2xl shadow-lg shadow-blue-500/10 mb-4 items-center justify-center">

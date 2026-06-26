@@ -22,6 +22,10 @@ export const DEFAULT_RENTAL_PRICES: RentalPrices = {
   harga_loker_2: 20000,
   harga_tempat_1: 50000,
   harga_tempat_2: 100000,
+  total_loker_1: 40,
+  total_loker_2: 20,
+  total_tempat_1: 10,
+  total_tempat_2: 5,
 };
 
 export function loadPrices(): TicketPrice[] {
@@ -100,7 +104,15 @@ export function loadRentalPrices(): RentalPrices {
     localStorage.setItem(KEYS.RENTAL_PRICES, JSON.stringify(DEFAULT_RENTAL_PRICES));
     return DEFAULT_RENTAL_PRICES;
   }
-  return JSON.parse(data);
+  try {
+    const parsed = JSON.parse(data);
+    return {
+      ...DEFAULT_RENTAL_PRICES,
+      ...parsed,
+    };
+  } catch (e) {
+    return DEFAULT_RENTAL_PRICES;
+  }
 }
 
 export function saveRentalPrices(prices: RentalPrices): void {

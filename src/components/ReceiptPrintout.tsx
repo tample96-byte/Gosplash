@@ -17,7 +17,7 @@ import {
   HelpCircle,
   Scissors
 } from "lucide-react";
-import { translations } from "../utils/lang";
+import { translations, Language } from "../utils/lang";
 import {
   connectBluetoothPrinter,
   connectSerialPrinter,
@@ -34,16 +34,18 @@ interface ReceiptPrintoutProps {
   transaction: Transaction | null;
   printerName: string;
   onClose: () => void;
+  language: Language;
 }
 
 export const ReceiptPrintout: React.FC<ReceiptPrintoutProps> = ({
   transaction,
   printerName,
   onClose,
+  language,
 }) => {
   if (!transaction) return null;
 
-  const t = translations.ID;
+  const t = translations[language];
   const [activePrinter, setActivePrinter] = useState<PrinterDevice>({
     type: "none",
     name: "Tidak Terhubung",
@@ -268,19 +270,23 @@ export const ReceiptPrintout: React.FC<ReceiptPrintoutProps> = ({
                     <span>Item</span>
                     <span>Total</span>
                   </div>
-                  <div className="flex justify-between text-neutral-800">
-                    <span>Tiket Masuk ({transaction.jumlah_pengunjung}x)</span>
-                    <span>Rp {(transaction.harga_satuan * transaction.jumlah_pengunjung).toLocaleString("id-ID")}</span>
-                  </div>
-                  <div className="pl-1.5 text-[9px] text-neutral-500">
-                    @ Rp {transaction.harga_satuan.toLocaleString("id-ID")}
-                  </div>
-                  
-                  {transaction.diskon_persen > 0 && (
-                    <div className="flex justify-between text-neutral-700">
-                      <span>Diskon ({transaction.nama_diskon}):</span>
-                      <span>-{transaction.diskon_persen}%</span>
-                    </div>
+                  {transaction.jumlah_pengunjung > 0 && (
+                    <>
+                      <div className="flex justify-between text-neutral-800">
+                        <span>Tiket Masuk ({transaction.jumlah_pengunjung}x)</span>
+                        <span>Rp {(transaction.harga_satuan * transaction.jumlah_pengunjung).toLocaleString("id-ID")}</span>
+                      </div>
+                      <div className="pl-1.5 text-[9px] text-neutral-500">
+                        @ Rp {transaction.harga_satuan.toLocaleString("id-ID")}
+                      </div>
+                      
+                      {transaction.diskon_persen > 0 && (
+                        <div className="flex justify-between text-neutral-700">
+                          <span>Diskon ({transaction.nama_diskon}):</span>
+                          <span>-{transaction.diskon_persen}%</span>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {transaction.sewa_loker && transaction.sewa_loker !== "Tidak" && (

@@ -28,6 +28,22 @@ export interface RentalPrices {
   harga_loker_2: number;
   harga_tempat_1: number;
   harga_tempat_2: number;
+  total_loker_1?: number;
+  total_loker_2?: number;
+  total_tempat_1?: number;
+  total_tempat_2?: number;
+}
+
+export interface AuditTrail {
+  timestamp: string;
+  exported_by: string;
+  record_count: {
+    transactions: number;
+    discounts: number;
+    prices: number;
+  };
+  integrity_checksum: string;
+  app_id: string;
 }
 
 export interface Discount {

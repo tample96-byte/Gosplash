@@ -27,11 +27,11 @@ import { CashierPanel } from "./components/CashierPanel";
 import { AdminPanel } from "./components/AdminPanel";
 import { ReceiptPrintout } from "./components/ReceiptPrintout";
 import { LoginPage } from "./components/LoginPage";
-import { Language } from "./utils/lang";
+import { Language, loadLanguage, saveLanguage } from "./utils/lang";
 
 export default function App() {
   // Master states
-  const language: Language = "ID";
+  const [language, setLanguage] = useState<Language>("ID");
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [activeRole, setActiveRole] = useState<UserRole>("Admin");
   const [prices, setPrices] = useState<TicketPrice[]>([]);
@@ -56,6 +56,7 @@ export default function App() {
     setTransactions(loadTransactions());
     setPrinterName(loadPrinterName());
     setRentalPrices(loadRentalPrices());
+    setLanguage(loadLanguage());
   }, []);
 
   // Handle Login success
@@ -152,6 +153,11 @@ export default function App() {
     return (
       <LoginPage
         onLoginSuccess={handleLoginSuccess}
+        language={language}
+        onLanguageChange={(lang) => {
+          setLanguage(lang);
+          saveLanguage(lang);
+        }}
       />
     );
   }
@@ -163,6 +169,11 @@ export default function App() {
         activeRole={activeRole}
         onLogout={handleLogout}
         printerName={printerName}
+        language={language}
+        onLanguageChange={(lang) => {
+          setLanguage(lang);
+          saveLanguage(lang);
+        }}
       />
 
       {/* 2. Main Content Dashboard Container */}
@@ -173,6 +184,7 @@ export default function App() {
           {/* LEFT: Cashier ticket input panel (5 columns on desktop) */}
           <section className="lg:col-span-5 h-full">
             <CashierPanel
+              transactions={transactions}
               prices={prices}
               discounts={discounts}
               rentalPrices={rentalPrices}

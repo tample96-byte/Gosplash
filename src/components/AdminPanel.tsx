@@ -9,6 +9,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { ShieldAlert, Download, Coins, Calendar, CalendarRange, Trash2, Plus, Edit3, Settings, AlertCircle, HelpCircle, CheckCircle, X, Search, Printer, Key, Tent, Database, Upload, Shield, Eye, EyeOff } from "lucide-react";
 import { saveAdminPassword, saveKasirPassword } from "../utils/storage";
 import { Language, translations } from "../utils/lang";
+import { encryptData, decryptData, calculateIntegrityChecksum } from "../utils/crypto";
 
 interface AdminPanelProps {
   isLocked: boolean;
@@ -61,13 +62,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   );
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // Administrative Price Modification States
+  // Administrative Price & Capacity Modification States
   const [weekdayPrice, setWeekdayPrice] = useState<string>("");
   const [weekendPrice, setWeekendPrice] = useState<string>("");
   const [loker1Price, setLoker1Price] = useState<string>("");
   const [loker2Price, setLoker2Price] = useState<string>("");
   const [tempat1Price, setTempat1Price] = useState<string>("");
   const [tempat2Price, setTempat2Price] = useState<string>("");
+  const [totalLoker1, setTotalLoker1] = useState<string>("");
+  const [totalLoker2, setTotalLoker2] = useState<string>("");
+  const [totalTempat1, setTotalTempat1] = useState<string>("");
+  const [totalTempat2, setTotalTempat2] = useState<string>("");
 
   // Printer Configuration State
   const [printerInput, setPrinterInput] = useState<string>(printerName);
@@ -87,6 +92,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [txEditDayType, setTxEditDayType] = useState<"Senin-Jumat" | "Sabtu-Minggu/Libur">("Senin-Jumat");
   const [txEditDiscountId, setTxEditDiscountId] = useState<string>("");
   const [txEditPaymentMethod, setTxEditPaymentMethod] = useState<"Tunai" | "QRIS" | "Debit/Kredit">("Tunai");
+  const [txEditLoker, setTxEditLoker] = useState<"Tidak" | "Tarif 1" | "Tarif 2">("Tidak");
+  const [txEditTempat, setTxEditTempat] = useState<"Tidak" | "Tarif 1" | "Tarif 2">("Tidak");
+  const [txEditBayar, setTxEditBayar] = useState<string>("");
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
 
   // Custom UI modal & toast states (replaces blocked native confirm/alert)
@@ -95,6 +103,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [showResetModal, setShowResetModal] = useState<boolean>(false);
   const [resetConfirmText, setResetConfirmText] = useState<string>("");
   const [toastMessage, setToastMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Pagination States for Transaction Log (Sangat Ringan & Rapih)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
 
   // Backup & Change Password States
   const [selectedPasswordRole, setSelectedPasswordRole] = useState<"Admin" | "Kasir">("Admin");
@@ -106,27 +118,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Backup Export Handler
   const handleExportBackup = () => {
     try {
+      // 1. Generate lightweight audit trail with integrity checksum
+      const checksum = calculateIntegrityChecksum(transactions);
+      const auditTrail = {
+        timestamp: new Date().toISOString(),
+        exported_by: "Admin",
+        record_count: {
+          transactions: transactions.length,
+          discounts: discounts.length,
+          prices: prices.length,
+        },
+        integrity_checksum: checksum,
+        app_id: "gosplash_ticketing_backup",
+      };
+
       const backupData = {
         prices,
         rentalPrices,
         discounts,
         transactions,
         printerName,
-        backup_date: new Date().toISOString(),
-        app_id: "gosplash_ticketing_backup"
+        backup_date: auditTrail.timestamp,
+        app_id: "gosplash_ticketing_backup",
+        audit_trail: auditTrail, // Embed the standard lightweight audit trail inside json
       };
 
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+      // 2. Encrypt JSON data to ensure tamper-proof offline storage
+      const jsonString = JSON.stringify(backupData, null, 2);
+      const encryptedPayload = encryptData(jsonString);
+
+      const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(encryptedPayload);
       const downloadAnchor = document.createElement('a');
       downloadAnchor.setAttribute("href", dataStr);
       
       const formattedDate = new Date().toISOString().slice(0, 10);
-      downloadAnchor.setAttribute("download", `GoSplash_Backup_${formattedDate}.json`);
+      downloadAnchor.setAttribute("download", `GoSplash_Backup_Encrypted_${formattedDate}.json`);
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
 
-      setToastMessage({ type: "success", text: "Cadangan data (backup) berhasil diekspor!" });
+      setToastMessage({ type: "success", text: "Backup terenkripsi & Audit Trail berhasil diekspor!" });
     } catch (err) {
       setToastMessage({ type: "error", text: "Gagal mengekspor data cadangan." });
     }
@@ -142,12 +173,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       try {
         const result = event.target?.result;
         if (typeof result !== "string") {
-          throw new Error("Invalid file content");
+          throw new Error("Konten file tidak valid.");
         }
 
-        const parsedData = JSON.parse(result);
+        // 1. Decrypt loaded file payload (supports legacy plaintext if format matches)
+        const decryptedJson = decryptData(result.trim());
+        const parsedData = JSON.parse(decryptedJson);
 
-        // Basic validation
+        // Basic structural validation
         if (
           !parsedData ||
           parsedData.app_id !== "gosplash_ticketing_backup" ||
@@ -156,7 +189,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           !Array.isArray(parsedData.transactions) ||
           !parsedData.rentalPrices
         ) {
-          throw new Error("Format file backup tidak valid.");
+          throw new Error("Format file cadangan tidak valid atau enkripsi rusak.");
+        }
+
+        // 2. Audit Trail & Integrity Verification
+        let auditNotice = "";
+        if (parsedData.audit_trail) {
+          const audit = parsedData.audit_trail;
+          const calculatedChecksum = calculateIntegrityChecksum(parsedData.transactions);
+          
+          if (audit.integrity_checksum !== calculatedChecksum) {
+            console.warn("Peringatan: Checksum integrasi data tidak cocok!");
+            auditNotice = " (Peringatan: Checksum integrasi tidak cocok, data mungkin dimodifikasi secara tidak sah)";
+          } else {
+            auditNotice = ` (${audit.record_count.transactions} Transaksi terverifikasi)`;
+          }
         }
 
         onRestoreAllData({
@@ -167,7 +214,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           printerName: parsedData.printerName || "Canon"
         });
 
-        setToastMessage({ type: "success", text: "Data berhasil dipulihkan (restore) dari cadangan!" });
+        setToastMessage({ 
+          type: "success", 
+          text: `Data terenkripsi berhasil dipulihkan!${auditNotice}` 
+        });
         e.target.value = "";
       } catch (err: any) {
         setToastMessage({ type: "error", text: err.message || "Gagal memulihkan file cadangan." });
@@ -245,8 +295,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setLoker2Price(rentalPrices.harga_loker_2.toString());
       setTempat1Price(rentalPrices.harga_tempat_1.toString());
       setTempat2Price(rentalPrices.harga_tempat_2.toString());
+      setTotalLoker1((rentalPrices.total_loker_1 ?? 40).toString());
+      setTotalLoker2((rentalPrices.total_loker_2 ?? 20).toString());
+      setTotalTempat1((rentalPrices.total_tempat_1 ?? 10).toString());
+      setTotalTempat2((rentalPrices.total_tempat_2 ?? 5).toString());
     }
   }, [rentalPrices]);
+
+  // Reset pagination to first page when any of the filters or search inputs change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [period, selectedDate, searchQuery]);
 
   // Filter Transactions according to selected date, period, and search query
   const getFilteredTransactions = (): Transaction[] => {
@@ -293,6 +352,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const filteredTx = getFilteredTransactions();
+
+  // Paginated transactions for the visual table list (keeps DOM small, fast, and extremely light)
+  const totalPages = Math.ceil(filteredTx.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedTx = filteredTx.slice(startIndex, startIndex + itemsPerPage);
 
   // Aggregate stats
   const totalRevenue = filteredTx.reduce((sum, tx) => sum + tx.total_bayar, 0);
@@ -395,6 +459,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       harga_loker_2: l2,
       harga_tempat_1: t1,
       harga_tempat_2: t2,
+      total_loker_1: parseInt(totalLoker1) || 0,
+      total_loker_2: parseInt(totalLoker2) || 0,
+      total_tempat_1: parseInt(totalTempat1) || 0,
+      total_tempat_2: parseInt(totalTempat2) || 0,
     });
 
     setToastMessage({ type: "success", text: "Tarif Tiket & Sewa Berhasil Diperbarui!" });
@@ -585,6 +653,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setTxEditQty(tx.jumlah_pengunjung.toString());
     setTxEditDayType(tx.jenis_hari as "Senin-Jumat" | "Sabtu-Minggu/Libur");
     setTxEditPaymentMethod((tx.metode_pembayaran || "Tunai") as "Tunai" | "QRIS" | "Debit/Kredit");
+    setTxEditLoker((tx.sewa_loker || "Tidak") as "Tidak" | "Tarif 1" | "Tarif 2");
+    setTxEditTempat((tx.sewa_tempat || "Tidak") as "Tidak" | "Tarif 1" | "Tarif 2");
+    setTxEditBayar(tx.bayar ? tx.bayar.toString() : "0");
     
     // Find matching discount ID
     const matchedDisc = discounts.find(
@@ -599,8 +670,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!txToEdit || !onUpdateTransactions) return;
 
     const qty = parseInt(txEditQty) || 0;
-    if (qty <= 0) {
-      setToastMessage({ type: "error", text: "Jumlah pengunjung harus lebih besar dari 0!" });
+    const hasRental = txEditLoker !== "Tidak" || txEditTempat !== "Tidak";
+    if (qty < 0 || (qty === 0 && !hasRental)) {
+      setToastMessage({ type: "error", text: "Jumlah pengunjung harus minimal 0 (atau sewa fasilitas aktif)!" });
       return;
     }
 
@@ -613,14 +685,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const discPercent = matchedDisc ? matchedDisc.persen_diskon : 0;
     const discName = matchedDisc ? matchedDisc.nama_diskon : "- Tanpa Diskon -";
 
-    // Recalculate total
+    // Prices maps for locker & place
+    const LOKER_PRICES = {
+      "Tidak": 0,
+      "Tarif 1": rentalPrices.harga_loker_1,
+      "Tarif 2": rentalPrices.harga_loker_2,
+    };
+
+    const TEMPAT_PRICES = {
+      "Tidak": 0,
+      "Tarif 1": rentalPrices.harga_tempat_1,
+      "Tarif 2": rentalPrices.harga_tempat_2,
+    };
+
     const subtotal = pricePerUnit * qty;
-    const total = subtotal - subtotal * (discPercent / 100);
+    const ticketTotal = subtotal - subtotal * (discPercent / 100);
+    const lockerCost = LOKER_PRICES[txEditLoker] || 0;
+    const placeCost = TEMPAT_PRICES[txEditTempat] || 0;
+    const total = ticketTotal + lockerCost + placeCost;
+
+    const paidAmount = txEditPaymentMethod === "Tunai" ? (parseFloat(txEditBayar) || 0) : total;
+    if (txEditPaymentMethod === "Tunai" && paidAmount < total) {
+      setToastMessage({ type: "error", text: "Jumlah uang dibayar kurang dari total pembayaran baru!" });
+      return;
+    }
 
     // Update the transaction list
     const updated = transactions.map((t) => {
       if (t.id === txToEdit.id) {
-        const paymentVal = t.bayar >= total ? t.bayar : total; // Make sure paid amount is at least total
         return {
           ...t,
           jumlah_pengunjung: qty,
@@ -628,9 +720,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           harga_satuan: pricePerUnit,
           diskon_persen: discPercent,
           nama_diskon: discName,
+          sewa_loker: txEditLoker,
+          sewa_tempat: txEditTempat,
+          harga_loker: lockerCost,
+          harga_tempat: placeCost,
           total_bayar: total,
-          bayar: txEditPaymentMethod === "Tunai" ? t.bayar : total,
-          kembalian: txEditPaymentMethod === "Tunai" ? (paymentVal - total) : 0,
+          bayar: paidAmount,
+          kembalian: txEditPaymentMethod === "Tunai" ? (paidAmount - total) : 0,
           metode_pembayaran: txEditPaymentMethod,
         };
       }
@@ -769,8 +865,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <label className="text-xs font-bold text-slate-500 uppercase">Jumlah Pengunjung (Pax)</label>
                 <input
                   type="number"
-                  min="1"
-                  required
+                  min="0"
                   value={txEditQty}
                   onChange={(e) => setTxEditQty(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -819,6 +914,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <option value="Debit/Kredit">EDC Kartu</option>
                 </select>
               </div>
+
+              {/* Sewa Loker */}
+              <div className="grid grid-cols-1 gap-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Sewa Loker</label>
+                <select
+                  value={txEditLoker}
+                  onChange={(e) => setTxEditLoker(e.target.value as "Tidak" | "Tarif 1" | "Tarif 2")}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="Tidak">Tidak Sewa</option>
+                  <option value="Tarif 1">Tarif 1 (Rp {rentalPrices.harga_loker_1.toLocaleString("id-ID")})</option>
+                  <option value="Tarif 2">Tarif 2 (Rp {rentalPrices.harga_loker_2.toLocaleString("id-ID")})</option>
+                </select>
+              </div>
+
+              {/* Sewa Tempat / Saung */}
+              <div className="grid grid-cols-1 gap-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Sewa Saung</label>
+                <select
+                  value={txEditTempat}
+                  onChange={(e) => setTxEditTempat(e.target.value as "Tidak" | "Tarif 1" | "Tarif 2")}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="Tidak">Tidak Sewa</option>
+                  <option value="Tarif 1">Tarif 1 (Rp {rentalPrices.harga_tempat_1.toLocaleString("id-ID")})</option>
+                  <option value="Tarif 2">Tarif 2 (Rp {rentalPrices.harga_tempat_2.toLocaleString("id-ID")})</option>
+                </select>
+              </div>
+
+              {/* Uang Dibayar (Only if payment method is Tunai) */}
+              {txEditPaymentMethod === "Tunai" && (
+                <div className="grid grid-cols-1 gap-1 animate-in fade-in duration-150 font-sans">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Uang Tunai Diterima (Rp)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={txEditBayar}
+                    onChange={(e) => setTxEditBayar(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
@@ -1306,11 +1444,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
 
           {/* DATA GRID VIEW (TRANSACTION LOG TABLE) */}
-          <div className="border border-slate-150 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto max-h-[220px]">
+          <div className="border border-slate-150 rounded-xl overflow-hidden bg-white shadow-sm">
+            <div className="overflow-x-auto max-h-[350px]">
               <table id="laporan-table" className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-xs font-semibold uppercase tracking-wider">
+                  <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-xs font-semibold uppercase tracking-wider sticky top-0 z-10">
                     <th className="px-5 py-3">No. Nota</th>
                     <th className="px-5 py-3">Tanggal</th>
                     <th className="px-5 py-3">Tipe Hari</th>
@@ -1323,14 +1461,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
-                  {filteredTx.length === 0 ? (
+                  {paginatedTx.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="px-5 py-10 text-center text-slate-400 font-sans">
                         Tidak ada transaksi terekam pada periode ini.
                       </td>
                     </tr>
                   ) : (
-                    filteredTx.map((tx) => (
+                    paginatedTx.map((tx) => (
                       <tr key={tx.id} className="hover:bg-slate-50/50 transition duration-150">
                         <td className="px-5 py-3.5 font-bold font-mono text-slate-800">#{tx.id}</td>
                         <td className="px-5 py-3.5 text-slate-500">
@@ -1413,6 +1551,56 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls bar */}
+            {filteredTx.length > 0 && (
+              <div className="bg-slate-50 border-t border-slate-100 px-5 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+                <div className="font-medium text-slate-600 text-center sm:text-left">
+                  Menampilkan <span className="font-bold text-slate-800">{startIndex + 1}</span> - <span className="font-bold text-slate-800">{Math.min(startIndex + itemsPerPage, filteredTx.length)}</span> dari <span className="font-bold text-slate-800">{filteredTx.length}</span> transaksi
+                </div>
+                
+                <div className="flex flex-wrap items-center justify-center gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500">Baris per halaman:</span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 transition font-bold"
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="py-1 px-2.5 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white rounded-lg transition font-bold text-[11px]"
+                    >
+                      Sebelumnya
+                    </button>
+                    <span className="font-medium text-slate-600">
+                      Halaman <span className="font-bold text-slate-800">{currentPage}</span> / {totalPages || 1}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      className="py-1 px-2.5 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white rounded-lg transition font-bold text-[11px]"
+                    >
+                      Berikutnya
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1462,79 +1650,135 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
 
-              {/* LOKER RATES ROW */}
+              {/* LOKER RATES ROW WITH REAL-TIME CAPACITY */}
               <div className="border-t border-slate-100 pt-3">
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1">
                   <Key className="w-3.5 h-3.5 text-amber-600" />
-                  Sewa Loker
+                  Sewa Loker & Kapasitas Inventaris
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="grid grid-cols-1 gap-1.5">
-                    <label className="text-xs font-semibold text-slate-500">Tarif 1</label>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-2 text-slate-400 text-sm">Rp</span>
-                      <input
-                        id="set-loker1-input"
-                        type="number"
-                        value={loker1Price}
-                        onChange={(e) => setLoker1Price(e.target.value)}
-                        required
-                        className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-1.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                      />
+                  {/* Tarif 1 */}
+                  <div className="grid grid-cols-1 gap-1.5 p-3 border border-slate-100 bg-slate-50/50 rounded-xl">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase">Loker Tarif 1</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2.5 text-slate-400 text-[10px] font-semibold">Tarif</span>
+                        <input
+                          id="set-loker1-input"
+                          type="number"
+                          value={loker1Price}
+                          onChange={(e) => setLoker1Price(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg pl-10 pr-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2.5 text-slate-400 text-[10px] font-semibold">Limit</span>
+                        <input
+                          id="set-loker1-capacity"
+                          type="number"
+                          value={totalLoker1}
+                          onChange={(e) => setTotalLoker1(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg pl-11 pr-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-1.5">
-                    <label className="text-xs font-semibold text-slate-500">Tarif 2</label>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-2 text-slate-400 text-sm">Rp</span>
-                      <input
-                        id="set-loker2-input"
-                        type="number"
-                        value={loker2Price}
-                        onChange={(e) => setLoker2Price(e.target.value)}
-                        required
-                        className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-1.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                      />
+                  {/* Tarif 2 */}
+                  <div className="grid grid-cols-1 gap-1.5 p-3 border border-slate-100 bg-slate-50/50 rounded-xl">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase">Loker Tarif 2</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2.5 text-slate-400 text-[10px] font-semibold">Tarif</span>
+                        <input
+                          id="set-loker2-input"
+                          type="number"
+                          value={loker2Price}
+                          onChange={(e) => setLoker2Price(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg pl-10 pr-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2.5 text-slate-400 text-[10px] font-semibold">Limit</span>
+                        <input
+                          id="set-loker2-capacity"
+                          type="number"
+                          value={totalLoker2}
+                          onChange={(e) => setTotalLoker2(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg pl-11 pr-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* TEMPAT RATES ROW */}
+              {/* TEMPAT RATES ROW WITH REAL-TIME CAPACITY */}
               <div className="border-t border-slate-100 pt-3">
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1">
                   <Tent className="w-3.5 h-3.5 text-amber-600" />
-                  Sewa Tempat / Saung
+                  Sewa Saung & Kapasitas Inventaris
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="grid grid-cols-1 gap-1.5">
-                    <label className="text-xs font-semibold text-slate-500">Tarif 1</label>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-2 text-slate-400 text-sm">Rp</span>
-                      <input
-                        id="set-tempat1-input"
-                        type="number"
-                        value={tempat1Price}
-                        onChange={(e) => setTempat1Price(e.target.value)}
-                        required
-                        className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-1.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                      />
+                  {/* Tempat Tarif 1 */}
+                  <div className="grid grid-cols-1 gap-1.5 p-3 border border-slate-100 bg-slate-50/50 rounded-xl">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase">Saung Tarif 1</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2.5 text-slate-400 text-[10px] font-semibold">Tarif</span>
+                        <input
+                          id="set-tempat1-input"
+                          type="number"
+                          value={tempat1Price}
+                          onChange={(e) => setTempat1Price(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg pl-10 pr-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2.5 text-slate-400 text-[10px] font-semibold">Limit</span>
+                        <input
+                          id="set-tempat1-capacity"
+                          type="number"
+                          value={totalTempat1}
+                          onChange={(e) => setTotalTempat1(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg pl-11 pr-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-1.5">
-                    <label className="text-xs font-semibold text-slate-500">Tarif 2</label>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-2 text-slate-400 text-sm">Rp</span>
-                      <input
-                        id="set-tempat2-input"
-                        type="number"
-                        value={tempat2Price}
-                        onChange={(e) => setTempat2Price(e.target.value)}
-                        required
-                        className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-1.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                      />
+                  {/* Tempat Tarif 2 */}
+                  <div className="grid grid-cols-1 gap-1.5 p-3 border border-slate-100 bg-slate-50/50 rounded-xl">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase">Saung Tarif 2</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2.5 text-slate-400 text-[10px] font-semibold">Tarif</span>
+                        <input
+                          id="set-tempat2-input"
+                          type="number"
+                          value={tempat2Price}
+                          onChange={(e) => setTempat2Price(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg pl-10 pr-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2.5 text-slate-400 text-[10px] font-semibold">Limit</span>
+                        <input
+                          id="set-tempat2-capacity"
+                          type="number"
+                          value={totalTempat2}
+                          onChange={(e) => setTotalTempat2(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg pl-11 pr-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1545,7 +1789,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 type="submit"
                 className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition mt-2"
               >
-                UPDATE TARIFF & HARGA SEWA
+                UPDATE TARIF & KAPASITAS INVENTARIS
               </button>
             </form>
 

@@ -9,6 +9,7 @@ import { Ticket, Users, Percent, Wallet, Banknote, RefreshCw, Printer, AlertTria
 import { Language, translations } from "../utils/lang";
 
 interface CashierPanelProps {
+  transactions: Transaction[];
   prices: TicketPrice[];
   discounts: Discount[];
   rentalPrices: RentalPrices;
@@ -18,6 +19,7 @@ interface CashierPanelProps {
 }
 
 export const CashierPanel: React.FC<CashierPanelProps> = ({
+  transactions,
   prices,
   discounts,
   rentalPrices,
@@ -26,6 +28,33 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
   language,
 }) => {
   const t = translations[language];
+
+  // --- Real-time Inventory & Capacity Calculations for Today ---
+  const todayTx = (transactions || []).filter((tx) => {
+    const txDate = new Date(tx.tanggal);
+    const todayDate = new Date();
+    return (
+      txDate.getFullYear() === todayDate.getFullYear() &&
+      txDate.getMonth() === todayDate.getMonth() &&
+      txDate.getDate() === todayDate.getDate()
+    );
+  });
+
+  const rentedLoker1 = todayTx.filter((tx) => tx.sewa_loker === "Tarif 1").length;
+  const rentedLoker2 = todayTx.filter((tx) => tx.sewa_loker === "Tarif 2").length;
+  const rentedTempat1 = todayTx.filter((tx) => tx.sewa_tempat === "Tarif 1").length;
+  const rentedTempat2 = todayTx.filter((tx) => tx.sewa_tempat === "Tarif 2").length;
+
+  const maxLoker1 = rentalPrices.total_loker_1 ?? 40;
+  const maxLoker2 = rentalPrices.total_loker_2 ?? 20;
+  const maxTempat1 = rentalPrices.total_tempat_1 ?? 10;
+  const maxTempat2 = rentalPrices.total_tempat_2 ?? 5;
+
+  const sisaLoker1 = Math.max(0, maxLoker1 - rentedLoker1);
+  const sisaLoker2 = Math.max(0, maxLoker2 - rentedLoker2);
+  const sisaTempat1 = Math.max(0, maxTempat1 - rentedTempat1);
+  const sisaTempat2 = Math.max(0, maxTempat2 - rentedTempat2);
+
   // State variables matching VB.NET form controls
   const [hargaSatuan, setHargaSatuan] = useState<number>(15000);
   const [jumlahPengunjung, setJumlahPengunjung] = useState<string>("");
@@ -137,13 +166,13 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
 
   // Recalculate change (kembalian)
   useEffect(() => {
-    const paidAmount = parseFloat(bayar) || 0;
-    if (paidAmount === 0 && totalAkhir === 0) {
+    if (bayar.trim() === "") {
       setKembalianText("0");
       setIsKurang(false);
       return;
     }
 
+    const paidAmount = parseFloat(bayar) || 0;
     const diff = paidAmount - totalAkhir;
     if (diff < 0) {
       setKembalianText("Uang Kurang!");
@@ -173,13 +202,32 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
     e.preventDefault();
     const qty = parseInt(jumlahPengunjung) || 0;
     const paidAmount = parseFloat(bayar) || 0;
+    const hasRental = sewaLoker !== "Tidak" || sewaTempat !== "Tidak";
 
-    if (qty <= 0) {
-      setErrorMsg("Masukkan jumlah pengunjung yang valid!");
+    if (qty < 0 || (qty === 0 && !hasRental)) {
+      setErrorMsg(language === "ID" ? "Masukkan jumlah pengunjung atau pilih sewa fasilitas terlebih dahulu!" : "Please enter visitor count or select a rental facility!");
       return;
     }
     if (paymentMethod === "Tunai" && (isKurang || paidAmount < totalAkhir)) {
       setErrorMsg("Uang pembayaran tidak mencukupi!");
+      return;
+    }
+
+    // --- Validate Inventory Availability before Saving ---
+    if (sewaLoker === "Tarif 1" && sisaLoker1 <= 0) {
+      setErrorMsg("Gagal menyimpan transaksi: Loker Tarif 1 sudah habis untuk hari ini!");
+      return;
+    }
+    if (sewaLoker === "Tarif 2" && sisaLoker2 <= 0) {
+      setErrorMsg("Gagal menyimpan transaksi: Loker Tarif 2 sudah habis untuk hari ini!");
+      return;
+    }
+    if (sewaTempat === "Tarif 1" && sisaTempat1 <= 0) {
+      setErrorMsg("Gagal menyimpan transaksi: Saung Tarif 1 sudah habis untuk hari ini!");
+      return;
+    }
+    if (sewaTempat === "Tarif 2" && sisaTempat2 <= 0) {
+      setErrorMsg("Gagal menyimpan transaksi: Saung Tarif 2 sudah habis untuk hari ini!");
       return;
     }
 
@@ -289,11 +337,10 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
               <input
                 id="jumlah-pengunjung-input"
                 type="number"
-                min="1"
+                min="0"
                 placeholder={t.visitors_placeholder}
                 value={jumlahPengunjung}
                 onChange={(e) => setJumlahPengunjung(e.target.value)}
-                required
                 className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
               <span className="absolute right-4 top-3 text-sm text-slate-500">{t.visitor_unit}</span>
@@ -331,6 +378,37 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
             </div>
           </div>
 
+          {/* Real-time Inventory Status Indicator */}
+          <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-3.5 space-y-2">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Status Inventaris Real-time (Hari Ini)</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              <div className="bg-white border border-slate-200 rounded-xl p-2 flex flex-col items-center shadow-sm">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Loker T1</span>
+                <span className={`text-sm font-black mt-0.5 ${sisaLoker1 <= 3 ? 'text-red-500 font-bold' : 'text-slate-700'}`}>
+                  {sisaLoker1} <span className="text-[10px] font-medium text-slate-400">/ {maxLoker1}</span>
+                </span>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-xl p-2 flex flex-col items-center shadow-sm">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Loker T2</span>
+                <span className={`text-sm font-black mt-0.5 ${sisaLoker2 <= 3 ? 'text-red-500 font-bold' : 'text-slate-700'}`}>
+                  {sisaLoker2} <span className="text-[10px] font-medium text-slate-400">/ {maxLoker2}</span>
+                </span>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-xl p-2 flex flex-col items-center shadow-sm">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Saung T1</span>
+                <span className={`text-sm font-black mt-0.5 ${sisaTempat1 <= 2 ? 'text-red-500 font-bold' : 'text-slate-700'}`}>
+                  {sisaTempat1} <span className="text-[10px] font-medium text-slate-400">/ {maxTempat1}</span>
+                </span>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-xl p-2 flex flex-col items-center shadow-sm">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Saung T2</span>
+                <span className={`text-sm font-black mt-0.5 ${sisaTempat2 <= 2 ? 'text-red-500 font-bold' : 'text-slate-700'}`}>
+                  {sisaTempat2} <span className="text-[10px] font-medium text-slate-400">/ {maxTempat2}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
           {/* Loker & Tempat Rentals (Requested upgrade) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Sewa Loker */}
@@ -342,12 +420,27 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
               <select
                 id="sewa-loker-select"
                 value={sewaLoker}
-                onChange={(e) => setSewaLoker(e.target.value as any)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                onChange={(e) => {
+                  const val = e.target.value as any;
+                  if (val === "Tarif 1" && sisaLoker1 <= 0) {
+                    setErrorMsg("Gagal: Kapasitas Loker Tarif 1 telah penuh!");
+                    return;
+                  }
+                  if (val === "Tarif 2" && sisaLoker2 <= 0) {
+                    setErrorMsg("Gagal: Kapasitas Loker Tarif 2 telah penuh!");
+                    return;
+                  }
+                  setSewaLoker(val);
+                }}
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-xs"
               >
                 <option value="Tidak">{t.no_rent}</option>
-                <option value="Tarif 1">Rp {rentalPrices.harga_loker_1.toLocaleString("id-ID")}</option>
-                <option value="Tarif 2">Rp {rentalPrices.harga_loker_2.toLocaleString("id-ID")}</option>
+                <option value="Tarif 1" disabled={sisaLoker1 <= 0}>
+                  Tarif 1 (Rp {rentalPrices.harga_loker_1.toLocaleString("id-ID")}) {sisaLoker1 <= 0 ? " [PENUH]" : ` - Sisa: ${sisaLoker1}/${maxLoker1}`}
+                </option>
+                <option value="Tarif 2" disabled={sisaLoker2 <= 0}>
+                  Tarif 2 (Rp {rentalPrices.harga_loker_2.toLocaleString("id-ID")}) {sisaLoker2 <= 0 ? " [PENUH]" : ` - Sisa: ${sisaLoker2}/${maxLoker2}`}
+                </option>
               </select>
             </div>
 
@@ -360,12 +453,27 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
               <select
                 id="sewa-tempat-select"
                 value={sewaTempat}
-                onChange={(e) => setSewaTempat(e.target.value as any)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                onChange={(e) => {
+                  const val = e.target.value as any;
+                  if (val === "Tarif 1" && sisaTempat1 <= 0) {
+                    setErrorMsg("Gagal: Kapasitas Saung Tarif 1 telah penuh!");
+                    return;
+                  }
+                  if (val === "Tarif 2" && sisaTempat2 <= 0) {
+                    setErrorMsg("Gagal: Kapasitas Saung Tarif 2 telah penuh!");
+                    return;
+                  }
+                  setSewaTempat(val);
+                }}
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-xs"
               >
                 <option value="Tidak">{t.no_rent}</option>
-                <option value="Tarif 1">Rp {rentalPrices.harga_tempat_1.toLocaleString("id-ID")}</option>
-                <option value="Tarif 2">Rp {rentalPrices.harga_tempat_2.toLocaleString("id-ID")}</option>
+                <option value="Tarif 1" disabled={sisaTempat1 <= 0}>
+                  Tarif 1 (Rp {rentalPrices.harga_tempat_1.toLocaleString("id-ID")}) {sisaTempat1 <= 0 ? " [PENUH]" : ` - Sisa: ${sisaTempat1}/${maxTempat1}`}
+                </option>
+                <option value="Tarif 2" disabled={sisaTempat2 <= 0}>
+                  Tarif 2 (Rp {rentalPrices.harga_tempat_2.toLocaleString("id-ID")}) {sisaTempat2 <= 0 ? " [PENUH]" : ` - Sisa: ${sisaTempat2}/${maxTempat2}`}
+                </option>
               </select>
             </div>
           </div>
@@ -482,7 +590,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
 
               {/* Change Display */}
               <div className="grid grid-cols-1 gap-1.5 animate-in fade-in duration-150">
-                <span className="text-sm font-semibold text-slate-700">{t.change}</span>
+                <span className="text-sm font-semibold text-slate-700">{t.change_due}</span>
                 <div
                   id="kembalian-display"
                   className={`rounded-xl p-3 border font-mono font-bold text-lg text-center flex items-center justify-center gap-2 ${

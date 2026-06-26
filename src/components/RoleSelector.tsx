@@ -6,19 +6,23 @@
 import React, { useState, useEffect } from "react";
 import { UserRole } from "../types";
 import { Shield, User, Clock, Printer, LogOut } from "lucide-react";
-import { translations } from "../utils/lang";
+import { translations, Language } from "../utils/lang";
 import { subscribeToPrinterState, PrinterDevice } from "../utils/printer";
 
 interface RoleSelectorProps {
   activeRole: UserRole;
   onLogout: () => void;
   printerName: string;
+  language: Language;
+  onLanguageChange: (lang: Language) => void;
 }
 
 export const RoleSelector: React.FC<RoleSelectorProps> = ({
   activeRole,
   onLogout,
   printerName,
+  language,
+  onLanguageChange,
 }) => {
   const [time, setTime] = useState<string>("");
   const [activeDevice, setActiveDevice] = useState<PrinterDevice>({
@@ -51,7 +55,7 @@ export const RoleSelector: React.FC<RoleSelectorProps> = ({
     return unsubscribe;
   }, []);
 
-  const t = translations.ID;
+  const t = translations[language];
   const isHardwareConnected = activeDevice.type !== "none";
 
   return (
@@ -72,8 +76,31 @@ export const RoleSelector: React.FC<RoleSelectorProps> = ({
           </div>
         </div>
 
-        {/* Live Clock, Thermal Printer Info */}
+        {/* Live Clock, Thermal Printer Info, Language Selector */}
         <div className="flex flex-wrap items-center gap-4 text-sm text-slate-300 font-mono">
+          <div className="flex items-center gap-1 bg-slate-850 p-1 rounded-lg border border-slate-700/50">
+            <button
+              onClick={() => onLanguageChange("ID")}
+              className={`px-2 py-1 text-[10px] font-black rounded transition ${
+                language === "ID"
+                  ? "bg-blue-600 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              ID
+            </button>
+            <button
+              onClick={() => onLanguageChange("EN")}
+              className={`px-2 py-1 text-[10px] font-black rounded transition ${
+                language === "EN"
+                  ? "bg-blue-600 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              EN
+            </button>
+          </div>
+
           <div className="flex items-center gap-1.5 bg-slate-800/60 px-3 py-1.5 rounded-md border border-slate-700/50">
             <Clock className="w-4 h-4 text-blue-400" />
             <span>{time || "00:00:00"}</span>

@@ -22,7 +22,7 @@ import { LoginPage } from "./components/LoginPage";
 import { Language, loadLanguage, saveLanguage } from "./utils/lang";
 
 // Firebase Imports
-import { collection, onSnapshot, doc, setDoc, writeBatch, getDocs, getDoc, getDocFromServer } from "firebase/firestore";
+import { collection, onSnapshot, doc, setDoc, writeBatch, getDocs, getDoc, getDocFromServer, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { DEFAULT_PRICES, DEFAULT_DISCOUNTS, generateMockTransactions } from "./data/mockData";
 
@@ -37,6 +37,7 @@ import {
   saveDiscountLocally,
   deleteDiscountLocally,
   saveRentalPricesLocally,
+  pruneOldLocalTransactions,
 } from "./utils/dexieDb";
 import { useOfflineSync } from "./hooks/useOfflineSync";
 
@@ -100,6 +101,9 @@ export default function App() {
 
     async function checkAndSeedDatabase() {
       try {
+        // Run automatic memory-efficient 30-day database pruning on boot
+        await pruneOldLocalTransactions();
+
         // Initialize local db standard seeds if empty
         const localTxCount = await localDb.transactions.count();
         const localPricesCount = await localDb.prices.count();
@@ -163,8 +167,17 @@ export default function App() {
 
   // Real-time listener for Transactions: Sync down to Dexie DB
   useEffect(() => {
-    const unsubscribe = onSnapshot(
+    const fortyFiveDaysAgo = new Date();
+    fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45);
+    const fortyFiveDaysAgoStr = fortyFiveDaysAgo.toISOString();
+
+    const q = query(
       collection(db, "transactions"),
+      where("tanggal", ">=", fortyFiveDaysAgoStr)
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
       async (snapshot) => {
         const txs: Transaction[] = [];
         snapshot.forEach((doc) => {
@@ -179,9 +192,32 @@ export default function App() {
         // Clean up locally any items that were deleted directly on the Firestore Console
         const serverIds = snapshot.docs.map(d => d.id);
         const localKeys = await localDb.transactions.toCollection().primaryKeys();
-        const deletedKeys = localKeys.filter(k => !serverIds.includes(k));
+        
+        let deletedKeys = localKeys.filter(k => !serverIds.includes(k));
+        
         if (deletedKeys.length > 0) {
-          await localDb.transactions.bulkDelete(deletedKeys);
+          // Exclude keys currently pending in the local sync queue to prevent accidental deletion
+          const pendingSyncs = await localDb.syncQueue.where("collection").equals("transactions").toArray();
+          const pendingIds = pendingSyncs.map(item => item.docId);
+          deletedKeys = deletedKeys.filter(k => !pendingIds.includes(k));
+        }
+
+        if (deletedKeys.length > 0) {
+          // Only delete keys that are within our 45-day window.
+          // Older keys are excluded naturally as they are expected to be pruned locally.
+          const oldTransactions = await localDb.transactions.bulkGet(deletedKeys);
+          const fortyFiveDaysAgoTime = fortyFiveDaysAgo.getTime();
+          
+          const keysToClean = deletedKeys.filter((k, idx) => {
+            const tx = oldTransactions[idx];
+            if (!tx) return false;
+            const txTime = new Date(tx.tanggal).getTime();
+            return !isNaN(txTime) && txTime >= fortyFiveDaysAgoTime;
+          });
+
+          if (keysToClean.length > 0) {
+            await localDb.transactions.bulkDelete(keysToClean);
+          }
         }
       },
       (error) => {

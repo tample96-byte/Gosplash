@@ -217,3 +217,31 @@ export async function syncQueueToFirestore(onStatusChange?: (status: { pendingCo
   console.log(`Synchronization session completed. ${successCount} item(s) processed successfully.`);
   return remainingCount === 0;
 }
+
+/**
+ * Prunes transactions from the local Dexie database that are older than 30 days.
+ * This runs locally and does NOT sync deletion actions to Firestore (keeping cloud data safe).
+ * Aligns with the memory-efficient optimization of local device performance.
+ */
+export async function pruneOldLocalTransactions() {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysAgoTime = thirtyDaysAgo.getTime();
+
+  try {
+    const allTransactions = await localDb.transactions.toArray();
+    const toDelete = allTransactions
+      .filter((tx) => {
+        const txTime = new Date(tx.tanggal).getTime();
+        return isNaN(txTime) || txTime < thirtyDaysAgoTime;
+      })
+      .map((tx) => tx.id);
+
+    if (toDelete.length > 0) {
+      console.log(`[Architecture Audit] Automatic 30-day cleanup running. Pruning ${toDelete.length} legacy transactions from client Dexie DB to ensure maximum memory efficiency.`);
+      await localDb.transactions.bulkDelete(toDelete);
+    }
+  } catch (error) {
+    console.error("Gagal menjalankan pembersihan riwayat lokal otomatis:", error);
+  }
+}

@@ -9,7 +9,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { ShieldAlert, Download, Coins, Calendar, CalendarRange, Trash2, Plus, Edit3, Settings, AlertCircle, HelpCircle, CheckCircle, X, Search, Printer, Key, Tent, Database, Upload, Shield, Eye, EyeOff } from "lucide-react";
 import { saveAdminPassword, saveKasirPassword } from "../utils/storage";
 import { Language, translations } from "../utils/lang";
-import { encryptData, decryptData, calculateIntegrityChecksum } from "../utils/crypto";
+import { encryptData, decryptData, calculateIntegrityChecksum, validateBackupTimestamp } from "../utils/crypto";
 
 interface AdminPanelProps {
   isLocked: boolean;
@@ -123,7 +123,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
 
   // Backup Export Handler
-  const handleExportBackup = () => {
+  const handleExportBackup = async () => {
     try {
       // 1. Generate lightweight audit trail with integrity checksum
       const checksum = calculateIntegrityChecksum(transactions);
@@ -150,9 +150,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         audit_trail: auditTrail, // Embed the standard lightweight audit trail inside json
       };
 
-      // 2. Encrypt JSON data to ensure tamper-proof offline storage
+      // 2. Encrypt JSON data to ensure tamper-proof offline storage using AES-GCM
       const jsonString = JSON.stringify(backupData, null, 2);
-      const encryptedPayload = encryptData(jsonString);
+      const encryptedPayload = await encryptData(jsonString);
 
       const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(encryptedPayload);
       const downloadAnchor = document.createElement('a');
@@ -176,15 +176,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const result = event.target?.result;
         if (typeof result !== "string") {
           throw new Error("Konten file tidak valid.");
         }
 
-        // 1. Decrypt loaded file payload (supports legacy plaintext if format matches)
-        const decryptedJson = decryptData(result.trim());
+        // 1. Decrypt loaded file payload using async AES-GCM decryption
+        const decryptedJson = await decryptData(result.trim());
         const parsedData = JSON.parse(decryptedJson);
 
         // Basic structural validation
@@ -199,7 +199,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           throw new Error("Format file cadangan tidak valid atau enkripsi rusak.");
         }
 
-        // 2. Audit Trail & Integrity Verification
+        // 2. Secure Timestamp Validation (prevents spoofing or future dates)
+        validateBackupTimestamp(parsedData.backup_date);
+
+        // 3. Audit Trail & Integrity Verification
         let auditNotice = "";
         if (parsedData.audit_trail) {
           const audit = parsedData.audit_trail;

@@ -26,24 +26,57 @@ import { collection, onSnapshot, doc, setDoc, writeBatch, getDocs, getDoc, getDo
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { DEFAULT_PRICES, DEFAULT_DISCOUNTS, generateMockTransactions } from "./data/mockData";
 
+// Dexie Local Database and Offline Sync
+import { useLiveQuery } from "dexie-react-hooks";
+import {
+  localDb,
+  saveTransactionLocally,
+  updateTransactionLocally,
+  deleteTransactionLocally,
+  savePriceLocally,
+  saveDiscountLocally,
+  deleteDiscountLocally,
+  saveRentalPricesLocally,
+} from "./utils/dexieDb";
+import { useOfflineSync } from "./hooks/useOfflineSync";
+
 export default function App() {
   // Master states
   const [language, setLanguage] = useState<Language>("ID");
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [activeRole, setActiveRole] = useState<UserRole>("Admin");
-  const [prices, setPrices] = useState<TicketPrice[]>([]);
-  const [discounts, setDiscounts] = useState<Discount[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [printerName, setPrinterName] = useState<string>("Canon");
-  const [rentalPrices, setRentalPrices] = useState<RentalPrices>({
+
+  // Receipt Modal State
+  const [activeReceipt, setActiveReceipt] = useState<Transaction | null>(null);
+
+  // Offline Sync State & Indicators
+  const { isOnline, isSyncing, pendingSyncCount, syncNow } = useOfflineSync();
+
+  // Retrieve states reactively from Dexie Local DB using useLiveQuery
+  const transactions = useLiveQuery(
+    () => localDb.transactions.toArray().then(arr => 
+      arr.sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime())
+    ),
+    []
+  ) || [];
+
+  const prices = useLiveQuery(() => localDb.prices.toArray(), []) || [];
+
+  const discounts = useLiveQuery(
+    () => localDb.discounts.toArray().then(arr => 
+      arr.sort((a, b) => a.persen_diskon - b.persen_diskon)
+    ),
+    []
+  ) || [];
+
+  const dbRentalPrices = useLiveQuery(() => localDb.rentalPrices.get("current"), []);
+  const rentalPrices = dbRentalPrices || {
     harga_loker_1: 10000,
     harga_loker_2: 20000,
     harga_tempat_1: 50000,
     harga_tempat_2: 100000,
-  });
-
-  // Receipt Modal State
-  const [activeReceipt, setActiveReceipt] = useState<Transaction | null>(null);
+  };
 
   // Validate Connection to Firestore on boot
   useEffect(() => {
@@ -67,38 +100,59 @@ export default function App() {
 
     async function checkAndSeedDatabase() {
       try {
-        const initDocRef = doc(db, "settings", "system_init");
-        const initDocSnap = await getDoc(initDocRef);
-        
-        if (!initDocSnap.exists()) {
-          console.log("Database GoSplash terdeteksi kosong. Melakukan inisialisasi data standar...");
-          const batch = writeBatch(db);
-          
-          // 1. Inisialisasi harga tiket
-          DEFAULT_PRICES.forEach((price) => {
-            const id = price.jenis_hari.replace("/", "_");
-            batch.set(doc(db, "prices", id), price);
+        // Initialize local db standard seeds if empty
+        const localTxCount = await localDb.transactions.count();
+        const localPricesCount = await localDb.prices.count();
+
+        if (localPricesCount === 0) {
+          console.log("Dexie DB terdeteksi kosong. Mengisi standard seed data lokal...");
+          await localDb.transaction("rw", [localDb.prices, localDb.discounts, localDb.rentalPrices, localDb.transactions], async () => {
+            for (const price of DEFAULT_PRICES) {
+              await localDb.prices.put(price);
+            }
+            for (const disc of DEFAULT_DISCOUNTS) {
+              await localDb.discounts.put(disc);
+            }
+            await localDb.rentalPrices.put({ ...DEFAULT_RENTAL_PRICES, id: "current" });
+            
+            if (localTxCount === 0) {
+              const mockTx = generateMockTransactions();
+              for (const tx of mockTx.slice(0, 25)) {
+                await localDb.transactions.put(tx);
+              }
+            }
           });
+        }
+
+        // Initialize Firebase Firestore only if we are online and settings are missing
+        if (navigator.onLine) {
+          const initDocRef = doc(db, "settings", "system_init");
+          const initDocSnap = await getDoc(initDocRef);
           
-          // 2. Inisialisasi daftar diskon/promo
-          DEFAULT_DISCOUNTS.forEach((disc) => {
-            batch.set(doc(db, "discounts", disc.id), disc);
-          });
-          
-          // 3. Inisialisasi harga sewa saung/loker
-          batch.set(doc(db, "rental_prices", "current"), DEFAULT_RENTAL_PRICES);
-          
-          // 4. Inisialisasi riwayat transaksi awal (mock)
-          const mockTx = generateMockTransactions();
-          mockTx.slice(0, 25).forEach((tx) => {
-            batch.set(doc(db, "transactions", tx.id), tx);
-          });
-          
-          // 5. Tandai database telah diinisialisasi
-          batch.set(initDocRef, { seeded: true });
-          
-          await batch.commit();
-          console.log("Database GoSplash berhasil diinisialisasi!");
+          if (!initDocSnap.exists()) {
+            console.log("Database Firestore terdeteksi kosong. Melakukan inisialisasi cloud data...");
+            const batch = writeBatch(db);
+            
+            DEFAULT_PRICES.forEach((price) => {
+              const id = price.jenis_hari.replace("/", "_");
+              batch.set(doc(db, "prices", id), price);
+            });
+            
+            DEFAULT_DISCOUNTS.forEach((disc) => {
+              batch.set(doc(db, "discounts", disc.id), disc);
+            });
+            
+            batch.set(doc(db, "rental_prices", "current"), DEFAULT_RENTAL_PRICES);
+            
+            const mockTx = generateMockTransactions();
+            mockTx.slice(0, 25).forEach((tx) => {
+              batch.set(doc(db, "transactions", tx.id), tx);
+            });
+            
+            batch.set(initDocRef, { seeded: true });
+            await batch.commit();
+            console.log("Database Firestore berhasil diinisialisasi!");
+          }
         }
       } catch (error) {
         console.error("Gagal melakukan inisialisasi database:", error);
@@ -107,18 +161,28 @@ export default function App() {
     checkAndSeedDatabase();
   }, []);
 
-  // Real-time listener for Transactions
+  // Real-time listener for Transactions: Sync down to Dexie DB
   useEffect(() => {
     const unsubscribe = onSnapshot(
       collection(db, "transactions"),
-      (snapshot) => {
+      async (snapshot) => {
         const txs: Transaction[] = [];
         snapshot.forEach((doc) => {
           txs.push(doc.data() as Transaction);
         });
-        // Sort by date descending
-        txs.sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
-        setTransactions(txs);
+        
+        if (txs.length > 0) {
+          // Put the synced elements down into local storage
+          await localDb.transactions.bulkPut(txs);
+        }
+
+        // Clean up locally any items that were deleted directly on the Firestore Console
+        const serverIds = snapshot.docs.map(d => d.id);
+        const localKeys = await localDb.transactions.toCollection().primaryKeys();
+        const deletedKeys = localKeys.filter(k => !serverIds.includes(k));
+        if (deletedKeys.length > 0) {
+          await localDb.transactions.bulkDelete(deletedKeys);
+        }
       },
       (error) => {
         handleFirestoreError(error, OperationType.GET, "transactions");
@@ -127,16 +191,18 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Real-time listener for Prices
+  // Real-time listener for Prices: Sync down to Dexie DB
   useEffect(() => {
     const unsubscribe = onSnapshot(
       collection(db, "prices"),
-      (snapshot) => {
+      async (snapshot) => {
         const prs: TicketPrice[] = [];
         snapshot.forEach((doc) => {
           prs.push(doc.data() as TicketPrice);
         });
-        setPrices(prs);
+        if (prs.length > 0) {
+          await localDb.prices.bulkPut(prs);
+        }
       },
       (error) => {
         handleFirestoreError(error, OperationType.GET, "prices");
@@ -145,17 +211,25 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Real-time listener for Discounts
+  // Real-time listener for Discounts: Sync down to Dexie DB
   useEffect(() => {
     const unsubscribe = onSnapshot(
       collection(db, "discounts"),
-      (snapshot) => {
+      async (snapshot) => {
         const dcs: Discount[] = [];
         snapshot.forEach((doc) => {
           dcs.push(doc.data() as Discount);
         });
-        dcs.sort((a, b) => a.persen_diskon - b.persen_diskon);
-        setDiscounts(dcs);
+        if (dcs.length > 0) {
+          await localDb.discounts.bulkPut(dcs);
+        }
+
+        const serverIds = snapshot.docs.map(d => d.id);
+        const localKeys = await localDb.discounts.toCollection().primaryKeys();
+        const deletedKeys = localKeys.filter(k => !serverIds.includes(k));
+        if (deletedKeys.length > 0) {
+          await localDb.discounts.bulkDelete(deletedKeys);
+        }
       },
       (error) => {
         handleFirestoreError(error, OperationType.GET, "discounts");
@@ -164,13 +238,14 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Real-time listener for Rental Prices
+  // Real-time listener for Rental Prices: Sync down to Dexie DB
   useEffect(() => {
     const unsubscribe = onSnapshot(
       doc(db, "rental_prices", "current"),
-      (docSnap) => {
+      async (docSnap) => {
         if (docSnap.exists()) {
-          setRentalPrices(docSnap.data() as RentalPrices);
+          const rPrices = docSnap.data() as RentalPrices;
+          await localDb.rentalPrices.put({ ...rPrices, id: "current" });
         }
       },
       (error) => {
@@ -195,13 +270,9 @@ export default function App() {
   // Sync prices update
   const handleUpdatePrices = async (newPrices: TicketPrice[]) => {
     try {
-      setPrices(newPrices);
-      const batch = writeBatch(db);
-      newPrices.forEach((price) => {
-        const id = price.jenis_hari.replace("/", "_");
-        batch.set(doc(db, "prices", id), price);
-      });
-      await batch.commit();
+      for (const price of newPrices) {
+        await savePriceLocally(price);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, "prices");
     }
@@ -210,8 +281,7 @@ export default function App() {
   // Sync rental prices update
   const handleUpdateRentalPrices = async (newRentalPrices: RentalPrices) => {
     try {
-      setRentalPrices(newRentalPrices);
-      await setDoc(doc(db, "rental_prices", "current"), newRentalPrices);
+      await saveRentalPricesLocally(newRentalPrices);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, "rental_prices/current");
     }
@@ -220,19 +290,16 @@ export default function App() {
   // Sync discounts update
   const handleUpdateDiscounts = async (newDiscounts: Discount[]) => {
     try {
-      setDiscounts(newDiscounts);
       const currentIds = discounts.map((d) => d.id);
       const newIds = newDiscounts.map((d) => d.id);
       const deletedIds = currentIds.filter((id) => !newIds.includes(id));
 
-      const batch = writeBatch(db);
-      newDiscounts.forEach((disc) => {
-        batch.set(doc(db, "discounts", disc.id), disc);
-      });
-      deletedIds.forEach((id) => {
-        batch.delete(doc(db, "discounts", id));
-      });
-      await batch.commit();
+      for (const disc of newDiscounts) {
+        await saveDiscountLocally(disc);
+      }
+      for (const id of deletedIds) {
+        await deleteDiscountLocally(id);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, "discounts");
     }
@@ -244,7 +311,7 @@ export default function App() {
     savePrinterName(name);
   };
 
-  // Handler to add a new transaction
+  // Handler to add a new transaction (Offline-first, instant, queued)
   const handleAddTransaction = async (tx: Omit<Transaction, "id">) => {
     try {
       const maxId = transactions.reduce((max, t) => Math.max(max, parseInt(t.id) || 0), 0);
@@ -253,10 +320,13 @@ export default function App() {
         ...tx,
         id: newId,
       };
-      // Do not await setDoc so that offline mode doesn't block the UI if promise hangs
-      setDoc(doc(db, "transactions", newId), newTx).catch((error) => {
-         console.warn("Background sync delay or error:", error);
-      });
+      
+      // Atomic local save with auto-sync queue injection
+      await saveTransactionLocally(newTx);
+      
+      // Run sync in background (non-blocking)
+      syncNow();
+      
       return newTx;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, `transactions/${Date.now()}`);
@@ -267,22 +337,18 @@ export default function App() {
   // Sync transactions update
   const handleUpdateTransactions = async (newTransactions: Transaction[]) => {
     try {
-      setTransactions(newTransactions);
       const currentIds = transactions.map((t) => t.id);
       const newIds = newTransactions.map((t) => t.id);
       const deletedIds = currentIds.filter((id) => !newIds.includes(id));
 
-      const batch = writeBatch(db);
-      newTransactions.forEach((tx) => {
-        const existingTx = transactions.find((t) => t.id === tx.id);
-        if (!existingTx || JSON.stringify(existingTx) !== JSON.stringify(tx)) {
-          batch.set(doc(db, "transactions", tx.id), tx);
-        }
-      });
-      deletedIds.forEach((id) => {
-        batch.delete(doc(db, "transactions", id));
-      });
-      await batch.commit();
+      for (const tx of newTransactions) {
+        await updateTransactionLocally(tx);
+      }
+      for (const id of deletedIds) {
+        await deleteTransactionLocally(id);
+      }
+      
+      syncNow();
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, "transactions");
     }
@@ -292,35 +358,68 @@ export default function App() {
   const handleResetAllData = async () => {
     try {
       clearAllData();
-      const transSnapshot = await getDocs(collection(db, "transactions"));
-      const pricesSnapshot = await getDocs(collection(db, "prices"));
-      const discountsSnapshot = await getDocs(collection(db, "discounts"));
 
-      const batch = writeBatch(db);
-      transSnapshot.forEach((doc) => batch.delete(doc.ref));
-      pricesSnapshot.forEach((doc) => batch.delete(doc.ref));
-      discountsSnapshot.forEach((doc) => batch.delete(doc.ref));
-      batch.delete(doc(db, "rental_prices", "current"));
-      batch.delete(doc(db, "settings", "system_init"));
-      await batch.commit();
+      // Clear local database tables
+      await localDb.transaction("rw", [localDb.transactions, localDb.prices, localDb.discounts, localDb.rentalPrices, localDb.syncQueue], async () => {
+        await localDb.transactions.clear();
+        await localDb.prices.clear();
+        await localDb.discounts.clear();
+        await localDb.rentalPrices.clear();
+        await localDb.syncQueue.clear();
+      });
 
-      // Seed defaults immediately
-      const seedBatch = writeBatch(db);
-      DEFAULT_PRICES.forEach((price) => {
-        const id = price.jenis_hari.replace("/", "_");
-        seedBatch.set(doc(db, "prices", id), price);
-      });
-      DEFAULT_DISCOUNTS.forEach((disc) => {
-        seedBatch.set(doc(db, "discounts", disc.id), disc);
-      });
-      seedBatch.set(doc(db, "rental_prices", "current"), DEFAULT_RENTAL_PRICES);
-      
-      const mockTx = generateMockTransactions();
-      mockTx.slice(0, 25).forEach((tx) => {
-        seedBatch.set(doc(db, "transactions", tx.id), tx);
-      });
-      seedBatch.set(doc(db, "settings", "system_init"), { seeded: true });
-      await seedBatch.commit();
+      if (navigator.onLine) {
+        const transSnapshot = await getDocs(collection(db, "transactions"));
+        const pricesSnapshot = await getDocs(collection(db, "prices"));
+        const discountsSnapshot = await getDocs(collection(db, "discounts"));
+
+        const batch = writeBatch(db);
+        transSnapshot.forEach((doc) => batch.delete(doc.ref));
+        pricesSnapshot.forEach((doc) => batch.delete(doc.ref));
+        discountsSnapshot.forEach((doc) => batch.delete(doc.ref));
+        batch.delete(doc(db, "rental_prices", "current"));
+        batch.delete(doc(db, "settings", "system_init"));
+        await batch.commit();
+
+        // Repopulate standard seeds on Firestore & Dexie
+        const seedBatch = writeBatch(db);
+        
+        for (const price of DEFAULT_PRICES) {
+          await savePriceLocally(price, true);
+          const id = price.jenis_hari.replace("/", "_");
+          seedBatch.set(doc(db, "prices", id), price);
+        }
+        for (const disc of DEFAULT_DISCOUNTS) {
+          await saveDiscountLocally(disc, true);
+          seedBatch.set(doc(db, "discounts", disc.id), disc);
+        }
+        await saveRentalPricesLocally(DEFAULT_RENTAL_PRICES, true);
+        seedBatch.set(doc(db, "rental_prices", "current"), DEFAULT_RENTAL_PRICES);
+
+        const mockTx = generateMockTransactions();
+        for (const tx of mockTx.slice(0, 25)) {
+          await saveTransactionLocally(tx, true);
+          seedBatch.set(doc(db, "transactions", tx.id), tx);
+        }
+        
+        seedBatch.set(doc(db, "settings", "system_init"), { seeded: true });
+        await seedBatch.commit();
+      } else {
+        // Offline-only reset (populate local DB immediately, sync queued when online)
+        await localDb.transaction("rw", [localDb.prices, localDb.discounts, localDb.rentalPrices, localDb.transactions], async () => {
+          for (const price of DEFAULT_PRICES) {
+            await localDb.prices.put(price);
+          }
+          for (const disc of DEFAULT_DISCOUNTS) {
+            await localDb.discounts.put(disc);
+          }
+          await localDb.rentalPrices.put({ ...DEFAULT_RENTAL_PRICES, id: "current" });
+          const mockTx = generateMockTransactions();
+          for (const tx of mockTx.slice(0, 25)) {
+            await localDb.transactions.put(tx);
+          }
+        });
+      }
 
       setActiveRole("Admin");
       setActiveReceipt(null);
@@ -333,10 +432,16 @@ export default function App() {
   const handleResetTransactionsOnly = async () => {
     try {
       clearTransactionsOnly();
-      const transSnapshot = await getDocs(collection(db, "transactions"));
-      const batch = writeBatch(db);
-      transSnapshot.forEach((doc) => batch.delete(doc.ref));
-      await batch.commit();
+      await localDb.transaction("rw", [localDb.transactions, localDb.syncQueue], async () => {
+        await localDb.transactions.clear();
+      });
+
+      if (navigator.onLine) {
+        const transSnapshot = await getDocs(collection(db, "transactions"));
+        const batch = writeBatch(db);
+        transSnapshot.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, "transactions");
     }
@@ -351,31 +456,59 @@ export default function App() {
     printerName: string;
   }) => {
     try {
-      const transSnapshot = await getDocs(collection(db, "transactions"));
-      const pricesSnapshot = await getDocs(collection(db, "prices"));
-      const discountsSnapshot = await getDocs(collection(db, "discounts"));
-
-      let batch = writeBatch(db);
-      transSnapshot.forEach((doc) => batch.delete(doc.ref));
-      pricesSnapshot.forEach((doc) => batch.delete(doc.ref));
-      discountsSnapshot.forEach((doc) => batch.delete(doc.ref));
-      await batch.commit();
-
-      batch = writeBatch(db);
-      backupData.prices.forEach((price) => {
-        const id = price.jenis_hari.replace("/", "_");
-        batch.set(doc(db, "prices", id), price);
+      // Clear local database
+      await localDb.transaction("rw", [localDb.transactions, localDb.prices, localDb.discounts, localDb.rentalPrices], async () => {
+        await localDb.transactions.clear();
+        await localDb.prices.clear();
+        await localDb.discounts.clear();
+        await localDb.rentalPrices.clear();
       });
-      backupData.discounts.forEach((disc) => {
-        batch.set(doc(db, "discounts", disc.id), disc);
-      });
-      backupData.transactions.forEach((tx) => {
-        batch.set(doc(db, "transactions", tx.id), tx);
-      });
-      batch.set(doc(db, "rental_prices", "current"), backupData.rentalPrices);
-      batch.set(doc(db, "settings", "system_init"), { seeded: true });
 
-      await batch.commit();
+      if (navigator.onLine) {
+        const transSnapshot = await getDocs(collection(db, "transactions"));
+        const pricesSnapshot = await getDocs(collection(db, "prices"));
+        const discountsSnapshot = await getDocs(collection(db, "discounts"));
+
+        let batch = writeBatch(db);
+        transSnapshot.forEach((doc) => batch.delete(doc.ref));
+        pricesSnapshot.forEach((doc) => batch.delete(doc.ref));
+        discountsSnapshot.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+
+        batch = writeBatch(db);
+        for (const price of backupData.prices) {
+          await savePriceLocally(price, true);
+          const id = price.jenis_hari.replace("/", "_");
+          batch.set(doc(db, "prices", id), price);
+        }
+        for (const disc of backupData.discounts) {
+          await saveDiscountLocally(disc, true);
+          batch.set(doc(db, "discounts", disc.id), disc);
+        }
+        for (const tx of backupData.transactions) {
+          await saveTransactionLocally(tx, true);
+          batch.set(doc(db, "transactions", tx.id), tx);
+        }
+        await saveRentalPricesLocally(backupData.rentalPrices, true);
+        batch.set(doc(db, "rental_prices", "current"), backupData.rentalPrices);
+        batch.set(doc(db, "settings", "system_init"), { seeded: true });
+
+        await batch.commit();
+      } else {
+        // Offline-only restore to local DB
+        await localDb.transaction("rw", [localDb.prices, localDb.discounts, localDb.rentalPrices, localDb.transactions], async () => {
+          for (const price of backupData.prices) {
+            await localDb.prices.put(price);
+          }
+          for (const disc of backupData.discounts) {
+            await localDb.discounts.put(disc);
+          }
+          await localDb.rentalPrices.put({ ...backupData.rentalPrices, id: "current" });
+          for (const tx of backupData.transactions) {
+            await localDb.transactions.put(tx);
+          }
+        });
+      }
 
       savePrinterName(backupData.printerName);
       setPrinterName(backupData.printerName);
@@ -383,7 +516,6 @@ export default function App() {
       handleFirestoreError(error, OperationType.WRITE, "restore_data");
     }
   };
-
 
   if (!isLoggedIn) {
     return (
@@ -410,6 +542,10 @@ export default function App() {
           setLanguage(lang);
           saveLanguage(lang);
         }}
+        isOnline={isOnline}
+        isSyncing={isSyncing}
+        pendingSyncCount={pendingSyncCount}
+        onSyncNow={syncNow}
       />
 
       {/* 2. Main Content Dashboard Container */}

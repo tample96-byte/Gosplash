@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { UserRole } from "../types";
-import { Shield, User, Clock, Printer, LogOut } from "lucide-react";
+import { Shield, User, Clock, Printer, LogOut, Wifi, WifiOff, RefreshCw } from "lucide-react";
 import { translations, Language } from "../utils/lang";
 import { subscribeToPrinterState, PrinterDevice } from "../utils/printer";
 
@@ -15,6 +15,10 @@ interface RoleSelectorProps {
   printerName: string;
   language: Language;
   onLanguageChange: (lang: Language) => void;
+  isOnline?: boolean;
+  isSyncing?: boolean;
+  pendingSyncCount?: number;
+  onSyncNow?: () => void;
 }
 
 export const RoleSelector: React.FC<RoleSelectorProps> = ({
@@ -23,6 +27,10 @@ export const RoleSelector: React.FC<RoleSelectorProps> = ({
   printerName,
   language,
   onLanguageChange,
+  isOnline = true,
+  isSyncing = false,
+  pendingSyncCount = 0,
+  onSyncNow,
 }) => {
   const [time, setTime] = useState<string>("");
   const [activeDevice, setActiveDevice] = useState<PrinterDevice>({
@@ -118,6 +126,43 @@ export const RoleSelector: React.FC<RoleSelectorProps> = ({
               )}
             </span>
           </div>
+
+          {/* Offline/Online Automatic Sync Indicator */}
+          <button
+            onClick={onSyncNow}
+            disabled={!isOnline || isSyncing}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition cursor-pointer select-none ${
+              !isOnline
+                ? "bg-rose-500/10 border-rose-500/30 text-rose-400 hover:bg-rose-500/20"
+                : pendingSyncCount > 0
+                ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20 animate-pulse"
+                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+            }`}
+            title={
+              !isOnline
+                ? "Offline - Menunggu Koneksi Internet"
+                : pendingSyncCount > 0
+                ? `${pendingSyncCount} transaksi menunggu sinkronisasi`
+                : "Tersinkronisasi dengan Cloud"
+            }
+          >
+            {isSyncing ? (
+              <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+            ) : isOnline ? (
+              <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <WifiOff className="w-3.5 h-3.5 text-rose-400" />
+            )}
+            <span>
+              {!isOnline
+                ? "Offline"
+                : isSyncing
+                ? "Sinkronisasi..."
+                : pendingSyncCount > 0
+                ? `${pendingSyncCount} Pending`
+                : "Cloud Synced"}
+            </span>
+          </button>
         </div>
 
         {/* Logged In User Indicator & Log Out button */}

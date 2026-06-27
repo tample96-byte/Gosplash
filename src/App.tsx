@@ -7,19 +7,11 @@ import { useState, useEffect } from "react";
 import {
   loadActiveRole,
   saveActiveRole,
-  loadPrices,
-  savePrices,
-  loadDiscounts,
-  saveDiscounts,
-  loadTransactions,
-  saveTransactions,
-  addTransaction,
   loadPrinterName,
   savePrinterName,
-  loadRentalPrices,
-  saveRentalPrices,
   clearAllData,
   clearTransactionsOnly,
+  DEFAULT_RENTAL_PRICES,
 } from "./utils/storage";
 import { UserRole, TicketPrice, Discount, Transaction, RentalPrices } from "./types";
 import { RoleSelector } from "./components/RoleSelector";
@@ -28,6 +20,11 @@ import { AdminPanel } from "./components/AdminPanel";
 import { ReceiptPrintout } from "./components/ReceiptPrintout";
 import { LoginPage } from "./components/LoginPage";
 import { Language, loadLanguage, saveLanguage } from "./utils/lang";
+
+// Firebase Imports
+import { collection, onSnapshot, doc, setDoc, writeBatch, getDocs, getDoc, getDocFromServer } from "firebase/firestore";
+import { db, handleFirestoreError, OperationType } from "./firebase";
+import { DEFAULT_PRICES, DEFAULT_DISCOUNTS, generateMockTransactions } from "./data/mockData";
 
 export default function App() {
   // Master states
@@ -48,15 +45,139 @@ export default function App() {
   // Receipt Modal State
   const [activeReceipt, setActiveReceipt] = useState<Transaction | null>(null);
 
-  // Load initial settings
+  // Validate Connection to Firestore on boot
+  useEffect(() => {
+    async function testConnection() {
+      try {
+        await getDocFromServer(doc(db, "test", "connection"));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("the client is offline")) {
+          console.error("Please check your Firebase configuration.");
+        }
+      }
+    }
+    testConnection();
+  }, []);
+
+  // Load language and role preferences and initialize Firebase database on first boot
   useEffect(() => {
     setActiveRole(loadActiveRole());
-    setPrices(loadPrices());
-    setDiscounts(loadDiscounts());
-    setTransactions(loadTransactions());
     setPrinterName(loadPrinterName());
-    setRentalPrices(loadRentalPrices());
     setLanguage(loadLanguage());
+
+    async function checkAndSeedDatabase() {
+      try {
+        const initDocRef = doc(db, "settings", "system_init");
+        const initDocSnap = await getDoc(initDocRef);
+        
+        if (!initDocSnap.exists()) {
+          console.log("Database GoSplash terdeteksi kosong. Melakukan inisialisasi data standar...");
+          const batch = writeBatch(db);
+          
+          // 1. Inisialisasi harga tiket
+          DEFAULT_PRICES.forEach((price) => {
+            const id = price.jenis_hari.replace("/", "_");
+            batch.set(doc(db, "prices", id), price);
+          });
+          
+          // 2. Inisialisasi daftar diskon/promo
+          DEFAULT_DISCOUNTS.forEach((disc) => {
+            batch.set(doc(db, "discounts", disc.id), disc);
+          });
+          
+          // 3. Inisialisasi harga sewa saung/loker
+          batch.set(doc(db, "rental_prices", "current"), DEFAULT_RENTAL_PRICES);
+          
+          // 4. Inisialisasi riwayat transaksi awal (mock)
+          const mockTx = generateMockTransactions();
+          mockTx.slice(0, 25).forEach((tx) => {
+            batch.set(doc(db, "transactions", tx.id), tx);
+          });
+          
+          // 5. Tandai database telah diinisialisasi
+          batch.set(initDocRef, { seeded: true });
+          
+          await batch.commit();
+          console.log("Database GoSplash berhasil diinisialisasi!");
+        }
+      } catch (error) {
+        console.error("Gagal melakukan inisialisasi database:", error);
+      }
+    }
+    checkAndSeedDatabase();
+  }, []);
+
+  // Real-time listener for Transactions
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "transactions"),
+      (snapshot) => {
+        const txs: Transaction[] = [];
+        snapshot.forEach((doc) => {
+          txs.push(doc.data() as Transaction);
+        });
+        // Sort by date descending
+        txs.sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+        setTransactions(txs);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, "transactions");
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time listener for Prices
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "prices"),
+      (snapshot) => {
+        const prs: TicketPrice[] = [];
+        snapshot.forEach((doc) => {
+          prs.push(doc.data() as TicketPrice);
+        });
+        setPrices(prs);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, "prices");
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time listener for Discounts
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "discounts"),
+      (snapshot) => {
+        const dcs: Discount[] = [];
+        snapshot.forEach((doc) => {
+          dcs.push(doc.data() as Discount);
+        });
+        dcs.sort((a, b) => a.persen_diskon - b.persen_diskon);
+        setDiscounts(dcs);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, "discounts");
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time listener for Rental Prices
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      doc(db, "rental_prices", "current"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setRentalPrices(docSnap.data() as RentalPrices);
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, "rental_prices/current");
+      }
+    );
+    return () => unsubscribe();
   }, []);
 
   // Handle Login success
@@ -72,21 +193,49 @@ export default function App() {
   };
 
   // Sync prices update
-  const handleUpdatePrices = (newPrices: TicketPrice[]) => {
-    setPrices(newPrices);
-    savePrices(newPrices);
+  const handleUpdatePrices = async (newPrices: TicketPrice[]) => {
+    try {
+      setPrices(newPrices);
+      const batch = writeBatch(db);
+      newPrices.forEach((price) => {
+        const id = price.jenis_hari.replace("/", "_");
+        batch.set(doc(db, "prices", id), price);
+      });
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, "prices");
+    }
   };
 
   // Sync rental prices update
-  const handleUpdateRentalPrices = (newRentalPrices: RentalPrices) => {
-    setRentalPrices(newRentalPrices);
-    saveRentalPrices(newRentalPrices);
+  const handleUpdateRentalPrices = async (newRentalPrices: RentalPrices) => {
+    try {
+      setRentalPrices(newRentalPrices);
+      await setDoc(doc(db, "rental_prices", "current"), newRentalPrices);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, "rental_prices/current");
+    }
   };
 
   // Sync discounts update
-  const handleUpdateDiscounts = (newDiscounts: Discount[]) => {
-    setDiscounts(newDiscounts);
-    saveDiscounts(newDiscounts);
+  const handleUpdateDiscounts = async (newDiscounts: Discount[]) => {
+    try {
+      setDiscounts(newDiscounts);
+      const currentIds = discounts.map((d) => d.id);
+      const newIds = newDiscounts.map((d) => d.id);
+      const deletedIds = currentIds.filter((id) => !newIds.includes(id));
+
+      const batch = writeBatch(db);
+      newDiscounts.forEach((disc) => {
+        batch.set(doc(db, "discounts", disc.id), disc);
+      });
+      deletedIds.forEach((id) => {
+        batch.delete(doc(db, "discounts", id));
+      });
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, "discounts");
+    }
   };
 
   // Sync printer update
@@ -95,59 +244,143 @@ export default function App() {
     savePrinterName(name);
   };
 
-  // Handler to add a new transaction (updates cashier & table immediately)
-  const handleAddTransaction = (tx: Omit<Transaction, "id">) => {
-    const newTx = addTransaction(tx);
-    // Reload transactions to trigger list/chart updates
-    setTransactions([newTx, ...transactions]);
-    return newTx;
+  // Handler to add a new transaction
+  const handleAddTransaction = async (tx: Omit<Transaction, "id">) => {
+    try {
+      const maxId = transactions.reduce((max, t) => Math.max(max, parseInt(t.id) || 0), 0);
+      const newId = (maxId + 1).toString();
+      const newTx: Transaction = {
+        ...tx,
+        id: newId,
+      };
+      await setDoc(doc(db, "transactions", newId), newTx);
+      return newTx;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `transactions/${Date.now()}`);
+      throw error;
+    }
   };
 
   // Sync transactions update
-  const handleUpdateTransactions = (newTransactions: Transaction[]) => {
-    setTransactions(newTransactions);
-    saveTransactions(newTransactions);
+  const handleUpdateTransactions = async (newTransactions: Transaction[]) => {
+    try {
+      setTransactions(newTransactions);
+      const currentIds = transactions.map((t) => t.id);
+      const newIds = newTransactions.map((t) => t.id);
+      const deletedIds = currentIds.filter((id) => !newIds.includes(id));
+
+      const batch = writeBatch(db);
+      newTransactions.forEach((tx) => {
+        const existingTx = transactions.find((t) => t.id === tx.id);
+        if (!existingTx || JSON.stringify(existingTx) !== JSON.stringify(tx)) {
+          batch.set(doc(db, "transactions", tx.id), tx);
+        }
+      });
+      deletedIds.forEach((id) => {
+        batch.delete(doc(db, "transactions", id));
+      });
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, "transactions");
+    }
   };
 
-  // Reset total system
-  const handleResetAllData = () => {
-    clearAllData();
-    // Reload state back to default
-    setActiveRole("Admin");
-    setPrices(loadPrices());
-    setDiscounts(loadDiscounts());
-    setTransactions(loadTransactions());
-    setPrinterName(loadPrinterName());
-    setRentalPrices(loadRentalPrices());
-    setActiveReceipt(null);
+  // Reset total system (Restore factory defaults)
+  const handleResetAllData = async () => {
+    try {
+      clearAllData();
+      const transSnapshot = await getDocs(collection(db, "transactions"));
+      const pricesSnapshot = await getDocs(collection(db, "prices"));
+      const discountsSnapshot = await getDocs(collection(db, "discounts"));
+
+      const batch = writeBatch(db);
+      transSnapshot.forEach((doc) => batch.delete(doc.ref));
+      pricesSnapshot.forEach((doc) => batch.delete(doc.ref));
+      discountsSnapshot.forEach((doc) => batch.delete(doc.ref));
+      batch.delete(doc(db, "rental_prices", "current"));
+      batch.delete(doc(db, "settings", "system_init"));
+      await batch.commit();
+
+      // Seed defaults immediately
+      const seedBatch = writeBatch(db);
+      DEFAULT_PRICES.forEach((price) => {
+        const id = price.jenis_hari.replace("/", "_");
+        seedBatch.set(doc(db, "prices", id), price);
+      });
+      DEFAULT_DISCOUNTS.forEach((disc) => {
+        seedBatch.set(doc(db, "discounts", disc.id), disc);
+      });
+      seedBatch.set(doc(db, "rental_prices", "current"), DEFAULT_RENTAL_PRICES);
+      
+      const mockTx = generateMockTransactions();
+      mockTx.slice(0, 25).forEach((tx) => {
+        seedBatch.set(doc(db, "transactions", tx.id), tx);
+      });
+      seedBatch.set(doc(db, "settings", "system_init"), { seeded: true });
+      await seedBatch.commit();
+
+      setActiveRole("Admin");
+      setActiveReceipt(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, "all_data");
+    }
   };
 
-  // Reset transactions only (preserves setup configs, prices, discounts, printer, and passwords)
-  const handleResetTransactionsOnly = () => {
-    clearTransactionsOnly();
-    setTransactions([]);
+  // Reset transactions only
+  const handleResetTransactionsOnly = async () => {
+    try {
+      clearTransactionsOnly();
+      const transSnapshot = await getDocs(collection(db, "transactions"));
+      const batch = writeBatch(db);
+      transSnapshot.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, "transactions");
+    }
   };
 
   // Restore all data from backup file
-  const handleRestoreAllData = (backupData: {
+  const handleRestoreAllData = async (backupData: {
     prices: TicketPrice[];
     rentalPrices: RentalPrices;
     discounts: Discount[];
     transactions: Transaction[];
     printerName: string;
   }) => {
-    savePrices(backupData.prices);
-    saveRentalPrices(backupData.rentalPrices);
-    saveDiscounts(backupData.discounts);
-    saveTransactions(backupData.transactions);
-    savePrinterName(backupData.printerName);
+    try {
+      const transSnapshot = await getDocs(collection(db, "transactions"));
+      const pricesSnapshot = await getDocs(collection(db, "prices"));
+      const discountsSnapshot = await getDocs(collection(db, "discounts"));
 
-    setPrices(backupData.prices);
-    setRentalPrices(backupData.rentalPrices);
-    setDiscounts(backupData.discounts);
-    setTransactions(backupData.transactions);
-    setPrinterName(backupData.printerName);
+      let batch = writeBatch(db);
+      transSnapshot.forEach((doc) => batch.delete(doc.ref));
+      pricesSnapshot.forEach((doc) => batch.delete(doc.ref));
+      discountsSnapshot.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+
+      batch = writeBatch(db);
+      backupData.prices.forEach((price) => {
+        const id = price.jenis_hari.replace("/", "_");
+        batch.set(doc(db, "prices", id), price);
+      });
+      backupData.discounts.forEach((disc) => {
+        batch.set(doc(db, "discounts", disc.id), disc);
+      });
+      backupData.transactions.forEach((tx) => {
+        batch.set(doc(db, "transactions", tx.id), tx);
+      });
+      batch.set(doc(db, "rental_prices", "current"), backupData.rentalPrices);
+      batch.set(doc(db, "settings", "system_init"), { seeded: true });
+
+      await batch.commit();
+
+      savePrinterName(backupData.printerName);
+      setPrinterName(backupData.printerName);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, "restore_data");
+    }
   };
+
 
   if (!isLoggedIn) {
     return (

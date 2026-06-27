@@ -57,9 +57,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const t = translations[language];
   // Filters matching VB.NET form controls
   const [period, setPeriod] = useState<ReportPeriod>("Harian");
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().substring(0, 10)
-  );
+
+  const getLocalDateString = (): string => {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalDateString());
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Administrative Price & Capacity Modification States

@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Transactions rules
+    match /transactions/{transactionId} {
+      allow read: if true;
+      allow create: if isValidId(transactionId) 
+        && incoming().id == transactionId
+        && incoming().tanggal is string
+        && incoming().harga_satuan is number
+        && incoming().jumlah_pengunjung is number
+        && incoming().jumlah_pengunjung >= 0
+        && incoming().diskon_persen is number
+        && incoming().nama_diskon is string
+        && incoming().total_bayar is number
+        && incoming().bayar is number
+        && incoming().kembalian is number
+        && (incoming().jenis_hari == "Senin-Jumat" || incoming().jenis_hari == "Sabtu-Minggu/Libur");
+      allow update: if isValidId(transactionId)
+        && incoming().id == transactionId
+        && incoming().tanggal is string
+        && incoming().harga_satuan is number
+        && incoming().jumlah_pengunjung is number
+        && incoming().jumlah_pengunjung >= 0;
+      allow delete: if true;
+    }
+
+    // Prices rules
+    match /prices/{priceId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Discounts rules
+    match /discounts/{discountId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Rental Prices rules
+    match /rental_prices/{rentalPriceId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Settings rules
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

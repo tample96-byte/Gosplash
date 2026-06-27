@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "Transaction": {
+      "title": "Transaction",
+      "description": "GoSplash ticket transaction record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tanggal": { "type": "string", "format": "date-time" },
+        "harga_satuan": { "type": "number" },
+        "jumlah_pengunjung": { "type": "integer" },
+        "diskon_persen": { "type": "number" },
+        "nama_diskon": { "type": "string" },
+        "total_bayar": { "type": "number" },
+        "bayar": { "type": "number" },
+        "kembalian": { "type": "number" },
+        "jenis_hari": { "type": "string", "enum": ["Senin-Jumat", "Sabtu-Minggu/Libur"] },
+        "metode_pembayaran": { "type": "string", "enum": ["Tunai", "QRIS", "Debit/Kredit"] },
+        "sewa_loker": { "type": "string", "enum": ["Tidak", "Tarif 1", "Tarif 2"] },
+        "sewa_tempat": { "type": "string", "enum": ["Tidak", "Tarif 1", "Tarif 2"] },
+        "harga_loker": { "type": "number" },
+        "harga_tempat": { "type": "number" }
+      },
+      "required": ["id", "tanggal", "harga_satuan", "jumlah_pengunjung", "diskon_persen", "nama_diskon", "total_bayar", "bayar", "kembalian", "jenis_hari"]
+    },
+    "TicketPrice": {
+      "title": "TicketPrice",
+      "description": "GoSplash ticket prices per day type",
+      "type": "object",
+      "properties": {
+        "jenis_hari": { "type": "string", "enum": ["Senin-Jumat", "Sabtu-Minggu/Libur"] },
+        "harga_tiket": { "type": "number" }
+      },
+      "required": ["jenis_hari", "harga_tiket"]
+    },
+    "Discount": {
+      "title": "Discount",
+      "description": "GoSplash ticket discounts and promos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nama_diskon": { "type": "string" },
+        "persen_diskon": { "type": "number" }
+      },
+      "required": ["id", "nama_diskon", "persen_diskon"]
+    },
+    "RentalPrices": {
+      "title": "RentalPrices",
+      "description": "Prices and capacities for rental facilities",
+      "type": "object",
+      "properties": {
+        "harga_loker_1": { "type": "number" },
+        "harga_loker_2": { "type": "number" },
+        "harga_tempat_1": { "type": "number" },
+        "harga_tempat_2": { "type": "number" },
+        "total_loker_1": { "type": "number" },
+        "total_loker_2": { "type": "number" },
+        "total_tempat_1": { "type": "number" },
+        "total_tempat_2": { "type": "number" }
+      },
+      "required": ["harga_loker_1", "harga_loker_2", "harga_tempat_1", "harga_tempat_2"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "App system settings and credentials",
+      "type": "object",
+      "properties": {
+        "password_admin": { "type": "string" },
+        "password_kasir": { "type": "string" },
+        "printer_name": { "type": "string" }
+      },
+      "required": ["password_admin", "password_kasir", "printer_name"]
+    }
+  },
+  "firestore": {
+    "transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Ticket sale transactions"
+    },
+    "prices/{priceId}": {
+      "schema": "TicketPrice",
+      "description": "Ticket prices by day type"
+    },
+    "discounts/{discountId}": {
+      "schema": "Discount",
+      "description": "Active discounts/promotions"
+    },
+    "rental_prices/{rentalPriceId}": {
+      "schema": "RentalPrices",
+      "description": "Rental lockers and places prices"
+    },
+    "settings/{settingId}": {
+      "schema": "Settings",
+      "description": "System settings and credentials"
+    }
+  }
+}

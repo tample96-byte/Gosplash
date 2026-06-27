@@ -13,7 +13,7 @@ interface CashierPanelProps {
   prices: TicketPrice[];
   discounts: Discount[];
   rentalPrices: RentalPrices;
-  onAddTransaction: (tx: Omit<Transaction, "id">) => Transaction;
+  onAddTransaction: (tx: Omit<Transaction, "id">) => Promise<Transaction>;
   onShowReceipt: (tx: Transaction) => void;
   language: Language;
 }
@@ -198,7 +198,7 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
   };
 
   // Form submit (Simpan & Cetak)
-  const handleSaveTransaction = (e: React.FormEvent) => {
+  const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     const qty = parseInt(jumlahPengunjung) || 0;
     const paidAmount = parseFloat(bayar) || 0;
@@ -234,29 +234,33 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
     const matchedDiscount = discounts.find((d) => d.id === selectedDiscountId);
     const namaDiskon = matchedDiscount ? matchedDiscount.nama_diskon : "- Tanpa Diskon -";
 
-    // Call storage add function
-    const newTx = onAddTransaction({
-      tanggal: new Date().toISOString(),
-      harga_satuan: hargaSatuan,
-      jumlah_pengunjung: qty,
-      diskon_persen: persenDiskon,
-      nama_diskon: namaDiskon,
-      total_bayar: totalAkhir,
-      bayar: paidAmount,
-      kembalian: paymentMethod === "Tunai" ? paidAmount - totalAkhir : 0,
-      jenis_hari: activeDayType,
-      metode_pembayaran: paymentMethod,
-      sewa_loker: sewaLoker,
-      sewa_tempat: sewaTempat,
-      harga_loker: LOKER_PRICES[sewaLoker],
-      harga_tempat: TEMPAT_PRICES[sewaTempat],
-    });
+    try {
+      // Call storage add function
+      const newTx = await onAddTransaction({
+        tanggal: new Date().toISOString(),
+        harga_satuan: hargaSatuan,
+        jumlah_pengunjung: qty,
+        diskon_persen: persenDiskon,
+        nama_diskon: namaDiskon,
+        total_bayar: totalAkhir,
+        bayar: paidAmount,
+        kembalian: paymentMethod === "Tunai" ? paidAmount - totalAkhir : 0,
+        jenis_hari: activeDayType,
+        metode_pembayaran: paymentMethod,
+        sewa_loker: sewaLoker,
+        sewa_tempat: sewaTempat,
+        harga_loker: LOKER_PRICES[sewaLoker],
+        harga_tempat: TEMPAT_PRICES[sewaTempat],
+      });
 
-    // Reset fields
-    handleReset();
+      // Reset fields
+      handleReset();
 
-    // Trigger printing/receipt preview
-    onShowReceipt(newTx);
+      // Trigger printing/receipt preview
+      onShowReceipt(newTx);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Gagal menyimpan transaksi ke database!");
+    }
   };
 
   return (

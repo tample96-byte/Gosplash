@@ -30,30 +30,56 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
   const t = translations[language];
 
   // --- Real-time Inventory & Capacity Calculations for Today ---
-  const todayTx = (transactions || []).filter((tx) => {
-    const txDate = new Date(tx.tanggal);
+  const {
+    sisaLoker1,
+    sisaLoker2,
+    sisaTempat1,
+    sisaTempat2,
+    maxLoker1,
+    maxLoker2,
+    maxTempat1,
+    maxTempat2
+  } = React.useMemo(() => {
     const todayDate = new Date();
-    return (
-      txDate.getFullYear() === todayDate.getFullYear() &&
-      txDate.getMonth() === todayDate.getMonth() &&
-      txDate.getDate() === todayDate.getDate()
-    );
-  });
+    const todayYear = todayDate.getFullYear();
+    const todayMonth = todayDate.getMonth();
+    const todayDay = todayDate.getDate();
 
-  const rentedLoker1 = todayTx.filter((tx) => tx.sewa_loker === "Tarif 1").length;
-  const rentedLoker2 = todayTx.filter((tx) => tx.sewa_loker === "Tarif 2").length;
-  const rentedTempat1 = todayTx.filter((tx) => tx.sewa_tempat === "Tarif 1").length;
-  const rentedTempat2 = todayTx.filter((tx) => tx.sewa_tempat === "Tarif 2").length;
+    let rLoker1 = 0;
+    let rLoker2 = 0;
+    let rTempat1 = 0;
+    let rTempat2 = 0;
 
-  const maxLoker1 = rentalPrices.total_loker_1 ?? 40;
-  const maxLoker2 = rentalPrices.total_loker_2 ?? 20;
-  const maxTempat1 = rentalPrices.total_tempat_1 ?? 10;
-  const maxTempat2 = rentalPrices.total_tempat_2 ?? 5;
+    (transactions || []).forEach((tx) => {
+      const txDate = new Date(tx.tanggal);
+      if (
+        txDate.getFullYear() === todayYear &&
+        txDate.getMonth() === todayMonth &&
+        txDate.getDate() === todayDay
+      ) {
+        if (tx.sewa_loker === "Tarif 1") rLoker1++;
+        if (tx.sewa_loker === "Tarif 2") rLoker2++;
+        if (tx.sewa_tempat === "Tarif 1") rTempat1++;
+        if (tx.sewa_tempat === "Tarif 2") rTempat2++;
+      }
+    });
 
-  const sisaLoker1 = Math.max(0, maxLoker1 - rentedLoker1);
-  const sisaLoker2 = Math.max(0, maxLoker2 - rentedLoker2);
-  const sisaTempat1 = Math.max(0, maxTempat1 - rentedTempat1);
-  const sisaTempat2 = Math.max(0, maxTempat2 - rentedTempat2);
+    const mLoker1 = rentalPrices.total_loker_1 ?? 40;
+    const mLoker2 = rentalPrices.total_loker_2 ?? 20;
+    const mTempat1 = rentalPrices.total_tempat_1 ?? 10;
+    const mTempat2 = rentalPrices.total_tempat_2 ?? 5;
+
+    return {
+      sisaLoker1: Math.max(0, mLoker1 - rLoker1),
+      sisaLoker2: Math.max(0, mLoker2 - rLoker2),
+      sisaTempat1: Math.max(0, mTempat1 - rTempat1),
+      sisaTempat2: Math.max(0, mTempat2 - rTempat2),
+      maxLoker1: mLoker1,
+      maxLoker2: mLoker2,
+      maxTempat1: mTempat1,
+      maxTempat2: mTempat2
+    };
+  }, [transactions, rentalPrices]);
 
   // State variables matching VB.NET form controls
   const [hargaSatuan, setHargaSatuan] = useState<number>(15000);

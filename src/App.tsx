@@ -253,7 +253,10 @@ export default function App() {
         ...tx,
         id: newId,
       };
-      await setDoc(doc(db, "transactions", newId), newTx);
+      // Do not await setDoc so that offline mode doesn't block the UI if promise hangs
+      setDoc(doc(db, "transactions", newId), newTx).catch((error) => {
+         console.warn("Background sync delay or error:", error);
+      });
       return newTx;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, `transactions/${Date.now()}`);

@@ -326,7 +326,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   // Filter Transactions according to selected date, period, and search query
-  const getFilteredTransactions = (): Transaction[] => {
+  const filteredTx = React.useMemo(() => {
     const targetDate = parseLocalDatePickerDate(selectedDate);
     
     return transactions.filter((tx) => {
@@ -367,9 +367,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       return true;
     });
-  };
-
-  const filteredTx = getFilteredTransactions();
+  }, [transactions, selectedDate, period, searchQuery]);
 
   // Paginated transactions for the visual table list (keeps DOM small, fast, and extremely light)
   const totalPages = Math.ceil(filteredTx.length / itemsPerPage);
@@ -377,11 +375,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const paginatedTx = filteredTx.slice(startIndex, startIndex + itemsPerPage);
 
   // Aggregate stats
-  const totalRevenue = filteredTx.reduce((sum, tx) => sum + tx.total_bayar, 0);
-  const totalVisitors = filteredTx.reduce((sum, tx) => sum + tx.jumlah_pengunjung, 0);
+  const totalRevenue = React.useMemo(() => filteredTx.reduce((sum, tx) => sum + tx.total_bayar, 0), [filteredTx]);
+  const totalVisitors = React.useMemo(() => filteredTx.reduce((sum, tx) => sum + tx.jumlah_pengunjung, 0), [filteredTx]);
 
   // Prepare Chart Data
-  const getChartData = () => {
+  const chartData = React.useMemo(() => {
     if (period === "Harian") {
       // Group by hours (08:00 to 17:00)
       const hours = Array.from({ length: 11 }, (_, i) => i + 8); // 8 to 18
@@ -448,9 +446,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
       return data;
     }
-  };
-
-  const chartData = getChartData();
+  }, [filteredTx, period, selectedDate]);
 
   // Handle price update submit
   const handleUpdatePrices = (e: React.FormEvent) => {

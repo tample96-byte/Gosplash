@@ -7,6 +7,8 @@ import React, { useState, useEffect } from "react";
 import { TicketPrice, Discount, Transaction, RentalPrices } from "../types";
 import { Ticket, Users, Percent, Wallet, Banknote, RefreshCw, Printer, AlertTriangle, QrCode, CreditCard, Key, Tent } from "lucide-react";
 import { Language, translations } from "../utils/lang";
+import { useLiveQuery } from "dexie-react-hooks";
+import { localDb } from "../utils/dexieDb";
 
 interface CashierPanelProps {
   transactions: Transaction[];
@@ -234,6 +236,10 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
       setErrorMsg(language === "ID" ? "Masukkan jumlah pengunjung atau pilih sewa fasilitas terlebih dahulu!" : "Please enter visitor count or select a rental facility!");
       return;
     }
+    if (totalAkhir <= 0) {
+      setErrorMsg(language === "ID" ? "Total transaksi Rp 0 diblokir!" : "Total transaction amount of Rp 0 is blocked!");
+      return;
+    }
     if (paymentMethod === "Tunai" && (isKurang || paidAmount < totalAkhir)) {
       setErrorMsg("Uang pembayaran tidak mencukupi!");
       return;
@@ -298,6 +304,15 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
           <h2 className="text-lg font-bold text-slate-800">
             {t.cashier_title}
           </h2>
+          {(() => {
+            const pendingCount = useLiveQuery(() => localDb.syncQueue.count()) ?? 0;
+            return pendingCount > 0 ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500 text-white animate-pulse shadow-sm">
+                <span>⚠️</span>
+                <span>{pendingCount} {language === "ID" ? "Transaksi Belum Terunggah" : "Transactions Pending"}</span>
+              </span>
+            ) : null;
+          })()}
         </div>
         
         {/* Dynamic Day Badge & Tester Override */}
@@ -370,7 +385,13 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
                 min="0"
                 placeholder={t.visitors_placeholder}
                 value={jumlahPengunjung}
-                onChange={(e) => setJumlahPengunjung(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val.includes("-")) return;
+                  const parsed = parseInt(val);
+                  if (parsed < 0) return;
+                  setJumlahPengunjung(val);
+                }}
                 className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
               <span className="absolute right-4 top-3 text-sm text-slate-500">{t.visitor_unit}</span>
@@ -593,7 +614,13 @@ export const CashierPanel: React.FC<CashierPanelProps> = ({
                     min="0"
                     placeholder="Contoh: 100000"
                     value={bayar}
-                    onChange={(e) => setBayar(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.includes("-")) return;
+                      const parsed = parseFloat(val);
+                      if (parsed < 0) return;
+                      setBayar(val);
+                    }}
                     required={paymentMethod === "Tunai"}
                     className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />

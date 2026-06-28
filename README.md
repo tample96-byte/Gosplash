@@ -58,7 +58,16 @@ npm run preview
   - Validates timestamps to prevent uploading backups from future dates (clock spoofing).
   - Displays lightweight audit-trail checksums for Admin approval before committing restores.
 
-### 🖨️ 4. Thermal ESC/POS Printer Emulation
+### 🆘 4. Single-PC Disaster Recovery (DR) Scenarios
+The application implements a resilient 2-way disaster recovery architecture optimized for a single-PC dedicated booth deployment:
+1. **Scenario A: Hardware Migration (Old PC partially functional)**:
+   - If the old PC can be booted briefly or its hard drive is accessible, perform an encrypted backup export from the Admin Panel.
+   - On the new replacement PC, import the backup file. The system will decrypt using AES-GCM, validate the backup timestamp to prevent spoofing, and immediately seed all prices, discounts, and transaction histories into the local IndexedDB.
+2. **Scenario B: Sudden PC Failure (Old PC completely destroyed)**:
+   - Connect the new replacement PC to the network. On first load, the local IndexedDB is automatically initialized and pre-seeded offline (`DEFAULT_PRICES`, `DEFAULT_DISCOUNTS`, `DEFAULT_RENTAL_PRICES`) so kasir sales can continue immediately.
+   - As soon as the replacement PC establishes internet connectivity, the Firestore synchronization engine will pull down the master transaction data from the last 45 days. The active configurations (pricing and discounts) are synchronized dynamically.
+
+### 🖨️ 5. Thermal ESC/POS Printer Emulation
 - Supports high-fidelity 58mm/80mm layout previews resembling realistic thermal receipts.
 - Includes a utility parser that formats sales into valid ESC/POS byte-sequences ready to be dispatched directly to physical thermal printers.
 

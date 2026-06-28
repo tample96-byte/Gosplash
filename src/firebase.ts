@@ -1,18 +1,17 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 
-enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code == 'failed-precondition') {
-    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
-  } else if (err.code == 'unimplemented') {
-    console.warn('The current browser does not support all of the features required to enable persistence');
-  }
-});
+// Configure initializeFirestore with persistentLocalCache and persistentMultipleTabManager
+// ensuring the app never freezes or crashes when booted in a network-dead state.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+}, firebaseConfig.firestoreDatabaseId);
 
 export const auth = getAuth();
 

@@ -8,7 +8,7 @@ import { TicketPrice, Discount, Transaction, RentalPrices } from "../types";
 import { Ticket, Users, Percent, Wallet, Banknote, RefreshCw, Printer, AlertTriangle, QrCode, CreditCard, Key, Tent } from "lucide-react";
 import { Language, translations } from "../utils/lang";
 import { useLiveQuery } from "dexie-react-hooks";
-import { localDb } from "../utils/dexieDb";
+import { localDb } from "../lib/dexieDb";
 
 interface CashierPanelProps {
   transactions: Transaction[];

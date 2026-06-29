@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { syncQueueToFirestore, localDb } from "../utils/dexieDb";
+import { syncQueueToFirestore, localDb } from "../lib/dexieDb";
 
 export function useOfflineSync() {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);

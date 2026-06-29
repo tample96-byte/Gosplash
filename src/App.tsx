@@ -15,15 +15,15 @@ import {
 } from "./utils/storage";
 import { UserRole, TicketPrice, Discount, Transaction, RentalPrices } from "./types";
 import { RoleSelector } from "./components/RoleSelector";
-import { CashierPanel } from "./components/CashierPanel";
-import { AdminPanel } from "./components/AdminPanel";
+import { CashierPanel } from "./pages/CashierPanel";
+import { AdminPanel } from "./pages/AdminPanel";
 import { ReceiptPrintout } from "./components/ReceiptPrintout";
-import { LoginPage } from "./components/LoginPage";
+import { LoginPage } from "./pages/LoginPage";
 import { Language, loadLanguage, saveLanguage } from "./utils/lang";
 
 // Firebase Imports
 import { collection, onSnapshot, doc, setDoc, writeBatch, getDocs, getDoc, getDocFromServer, query, where } from "firebase/firestore";
-import { db, handleFirestoreError, OperationType } from "./firebase";
+import { db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { DEFAULT_PRICES, DEFAULT_DISCOUNTS, generateMockTransactions } from "./data/mockData";
 
 // Dexie Local Database and Offline Sync
@@ -38,7 +38,7 @@ import {
   deleteDiscountLocally,
   saveRentalPricesLocally,
   pruneOldLocalTransactions,
-} from "./utils/dexieDb";
+} from "./lib/dexieDb";
 import { useOfflineSync } from "./hooks/useOfflineSync";
 
 export default function App() {

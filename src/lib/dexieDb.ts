@@ -1,7 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import { Transaction, TicketPrice, Discount, RentalPrices } from "../types";
 import { doc, setDoc, deleteDoc, writeBatch } from "firebase/firestore";
-import { db } from "../firebase";
+import { db } from "./firebase";
 
 // Define Sync Queue item interface
 export interface SyncQueueItem {

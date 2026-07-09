@@ -506,7 +506,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const totalEodTicketRevenue = totalEodRevenueSum - (totalEodLokerRevenue + totalEodTempatRevenue);
 
     // Payment methods breakdown
-    const tunaiTotal = eodTx.filter(tx => tx.metode_pembayaran === "Tunai").reduce((sum, tx) => sum + tx.total_bayar, 0);
+    const tunaiTotal = eodTx.filter(tx => (tx.metode_pembayaran || "Tunai") === "Tunai").reduce((sum, tx) => sum + tx.total_bayar, 0);
     const qrisTotal = eodTx.filter(tx => tx.metode_pembayaran === "QRIS").reduce((sum, tx) => sum + tx.total_bayar, 0);
     const debitTotal = eodTx.filter(tx => tx.metode_pembayaran === "Debit/Kredit").reduce((sum, tx) => sum + tx.total_bayar, 0);
 
@@ -776,20 +776,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       return;
     }
 
-    // Prepare CSV header
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "No. Nota,Tanggal,Hari,Harga Satuan,Jumlah Pengunjung,Diskon %,Total Bayar,Bayar Tunai,Kembalian\n";
+    // Prepare CSV header with detailed breakdowns to ensure perfect Excel reconciliation
+    const csvContent = [
+      "No. Nota,Tanggal,Hari,Harga Tiket,Jumlah Pengunjung,Diskon %,Nama Promo,Sewa Loker,Harga Loker,Sewa Tempat,Harga Tempat,Total Bayar,Metode Pembayaran,Uang Diterima (Tunai),Kembalian,Pemasukan Tunai,Pemasukan Non-Tunai"
+    ];
 
-    // Add transaction lines
+    // Add transaction lines with detailed audit values
     filteredTx.forEach((tx) => {
       const formattedDate = new Date(tx.tanggal).toISOString().replace("T", " ").substring(0, 19);
-      csvContent += `${tx.id},${formattedDate},${tx.jenis_hari},${tx.harga_satuan},${tx.jumlah_pengunjung},${tx.diskon_persen},${tx.total_bayar},${tx.bayar},${tx.kembalian}\n`;
+      const isTunai = (tx.metode_pembayaran || "Tunai") === "Tunai";
+      
+      const uangDiterima = isTunai ? tx.bayar : 0;
+      const kembalian = isTunai ? tx.kembalian : 0;
+      const pemasukanTunai = isTunai ? tx.total_bayar : 0;
+      const pemasukanNonTunai = !isTunai ? tx.total_bayar : 0;
+
+      const row = [
+        tx.id,
+        formattedDate,
+        tx.jenis_hari,
+        tx.harga_satuan,
+        tx.jumlah_pengunjung,
+        tx.diskon_persen,
+        `"${(tx.nama_diskon || "Tidak Ada").replace(/"/g, '""')}"`,
+        tx.sewa_loker || "Tidak",
+        tx.harga_loker || 0,
+        tx.sewa_tempat || "Tidak",
+        tx.harga_tempat || 0,
+        tx.total_bayar,
+        tx.metode_pembayaran || "Tunai",
+        uangDiterima,
+        kembalian,
+        pemasukanTunai,
+        pemasukanNonTunai
+      ];
+
+      csvContent.push(row.join(","));
     });
 
-    // Create a programmatical download anchor
-    const encodedUri = encodeURI(csvContent);
+    // Create a programmatical download anchor with UTF-8 BOM prefix
+    const csvString = "\ufeff" + csvContent.join("\n");
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute(
       "download",
       `Laporan_GoSplash_${period}_${selectedDate}.csv`
@@ -797,6 +828,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
